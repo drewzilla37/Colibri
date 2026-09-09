@@ -706,8 +706,10 @@ vlm_MessageSimpleNew
 vlm_New
 vout_ChangeAspectRatio
 vout_Close
+vout_GetDisplayedDate
 vout_GetPicture
 vout_PutPicture
+vout_TryGetPicture
 vout_PutSubpicture
 vout_RegisterSubpictureChannel
 vout_FlushSubpictureChannel

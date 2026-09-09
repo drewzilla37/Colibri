@@ -51,6 +51,7 @@ enum {
     VOUT_CONTROL_PAUSE,
     VOUT_CONTROL_FLUSH,                 /* time */
     VOUT_CONTROL_STEP,                  /* time_ptr */
+    VOUT_CONTROL_GET_DISPLAYED_DATE,    /* time_ptr */
 
     VOUT_CONTROL_FULLSCREEN,            /* bool */
     VOUT_CONTROL_WINDOW_STATE,          /* unsigned */

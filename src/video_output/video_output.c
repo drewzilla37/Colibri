@@ -353,6 +353,16 @@ void vout_NextPicture(vout_thread_t *vout, vlc_tick_t *duration)
     vout_control_WaitEmpty(&vout->p->control);
 }
 
+void vout_GetDisplayedDate(vout_thread_t *vout, vlc_tick_t *date)
+{
+    vout_control_cmd_t cmd;
+    vout_control_cmd_Init(&cmd, VOUT_CONTROL_GET_DISPLAYED_DATE);
+    cmd.u.time_ptr = date;
+
+    vout_control_Push(&vout->p->control, &cmd);
+    vout_control_WaitEmpty(&vout->p->control);
+}
+
 void vout_DisplayTitle(vout_thread_t *vout, const char *title)
 {
     assert(title);
@@ -408,6 +418,16 @@ picture_t *vout_GetPicture(vout_thread_t *vout)
 {
     picture_t *picture = picture_pool_Wait(vout->p->decoder_pool);
     if (likely(picture != NULL)) {
+        picture_Reset(picture);
+        VideoFormatCopyCropAr(&picture->format, &vout->p->original);
+    }
+    return picture;
+}
+
+picture_t *vout_TryGetPicture(vout_thread_t *vout)
+{
+    picture_t *picture = picture_pool_Get(vout->p->decoder_pool);
+    if (picture != NULL) {
         picture_Reset(picture);
         VideoFormatCopyCropAr(&picture->format, &vout->p->original);
     }
@@ -1739,6 +1759,9 @@ static int ThreadControl(vout_thread_t *vout, vout_control_cmd_t cmd)
         break;
     case VOUT_CONTROL_STEP:
         ThreadStep(vout, cmd.u.time_ptr);
+        break;
+    case VOUT_CONTROL_GET_DISPLAYED_DATE:
+        *cmd.u.time_ptr = vout->p->displayed.timestamp;
         break;
     case VOUT_CONTROL_FULLSCREEN:
         ThreadChangeFullscreen(vout, cmd.u.boolean);

@@ -150,6 +150,23 @@ VLC_API void vout_ChangeAspectRatio( vout_thread_t *p_vout,
 
 /* */
 VLC_API picture_t * vout_GetPicture( vout_thread_t * );
+
+/**
+ * Like vout_GetPicture(), but never waits: returns NULL immediately if every
+ * picture in the pool is already allocated. Use this instead of
+ * vout_GetPicture() from any thread that must not block - in particular the
+ * input thread while paused, where no picture is ever returned to the pool and
+ * the blocking variant would wait forever.
+ */
+VLC_API picture_t * vout_TryGetPicture( vout_thread_t * );
+
+/**
+ * Reports the date of the picture the vout currently has on screen, which is
+ * not the same as the last picture handed to it: the vout queues pictures
+ * ahead of what it displays. Answered on the vout thread, so call it with no
+ * decoder lock held.
+ */
+VLC_API void vout_GetDisplayedDate( vout_thread_t *, vlc_tick_t * );
 VLC_API void vout_PutPicture( vout_thread_t *, picture_t * );
 
 /* Subpictures channels ID */
