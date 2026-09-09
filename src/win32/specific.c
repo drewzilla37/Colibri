@@ -68,7 +68,15 @@ void system_Init(void)
     if (GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")),
                                        "SetDefaultDllDirectories") != NULL)
 # endif /* FIXME: not reentrant */
-        LoadLibraryFlags = LOAD_LIBRARY_SEARCH_SYSTEM32;
+    {
+        /* Restricting plugin DLL loading to System32 only makes sense for a
+         * production build where every plugin is statically linked (as
+         * VLC's official contrib-built releases are). This is a local,
+         * non-redistributed dev build where a few plugins (qt, archive,
+         * gme, x265) dynamically link against non-system DLLs (system Qt5,
+         * mingw64 runtime), so the restriction is disabled here to let the
+         * normal PATH-based search find them. */
+    }
 #endif
 }
 

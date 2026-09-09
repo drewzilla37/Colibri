@@ -168,9 +168,14 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     /***
      * The LoadLibrary* calls from the modules and the 3rd party code
-     * will search in SYSTEM32 only
+     * will search in SYSTEM32 only.
+     * Disabled for this local, non-redistributed dev build: a few plugins
+     * (qt, archive, gme, x265) dynamically link against non-system DLLs
+     * (system Qt5, mingw64 runtime) that only PATH-based search can find.
+     * Official contrib-based builds link everything statically and never
+     * need this.
      * */
-    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    /* SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32); */
     /***
      * Load DLLs from system32 before any other folder (when possible)
      */
