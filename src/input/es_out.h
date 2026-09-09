@@ -140,9 +140,25 @@ static inline int es_out_SetTime( es_out_t *p_out, vlc_tick_t i_date )
 {
     return es_out_Control( p_out, ES_OUT_SET_TIME, i_date );
 }
-static inline int es_out_SetFrameNext( es_out_t *p_out )
+static inline int es_out_SetFrameNext( es_out_t *p_out, vlc_tick_t *pi_duration )
 {
-    return es_out_Control( p_out, ES_OUT_SET_FRAME_NEXT );
+    return es_out_Control( p_out, ES_OUT_SET_FRAME_NEXT, pi_duration );
+}
+static inline int es_out_VideoHistoryStepBack( es_out_t *p_out, vlc_tick_t *pi_date )
+{
+    return es_out_Control( p_out, ES_OUT_VIDEO_HISTORY_STEP_BACK, pi_date );
+}
+static inline int es_out_VideoHistoryStepForward( es_out_t *p_out, vlc_tick_t *pi_date )
+{
+    return es_out_Control( p_out, ES_OUT_VIDEO_HISTORY_STEP_FORWARD, pi_date );
+}
+static inline int es_out_VideoHistoryIsActive( es_out_t *p_out, bool *pb_active )
+{
+    return es_out_Control( p_out, ES_OUT_VIDEO_HISTORY_IS_ACTIVE, pb_active );
+}
+static inline int es_out_VideoHistoryReset( es_out_t *p_out )
+{
+    return es_out_Control( p_out, ES_OUT_VIDEO_HISTORY_RESET );
 }
 static inline void es_out_SetTimes( es_out_t *p_out, double f_position, vlc_tick_t i_time, vlc_tick_t i_length )
 {

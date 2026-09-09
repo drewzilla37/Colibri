@@ -98,6 +98,29 @@ enum es_out_query_e
 
     ES_OUT_POST_SUBNODE, /* arg1=input_item_node_t *, res=can fail */
 
+    /* Step the current video track's reverse-frame history buffer one
+     * step towards the past and display that frame directly (no seek,
+     * no re-decode). arg1 receives the displayed frame's timestamp.
+     * Fails if there is no video track, the feature is disabled, or the
+     * oldest buffered frame has already been reached. */
+    ES_OUT_VIDEO_HISTORY_STEP_BACK, /* arg1=vlc_tick_t *pi_date, res=can fail */
+
+    /* Step the current video track's reverse-frame history buffer one
+     * step towards the present and display that frame directly. Fails
+     * (harmlessly) if already at the live edge - the caller should fall
+     * back to a real forward decode step in that case. */
+    ES_OUT_VIDEO_HISTORY_STEP_FORWARD, /* arg1=vlc_tick_t *pi_date, res=can fail */
+
+    /* True if the video track is currently displaying a frame from its
+     * reverse-frame history buffer rather than the live decoded frame.
+     * Fails if there is no video track selected. */
+    ES_OUT_VIDEO_HISTORY_IS_ACTIVE, /* arg1=bool *pb_active, res=can fail */
+
+    /* Reset (clear) the current video track's reverse-frame history
+     * buffer, e.g. after a seek or other discontinuity. Fails if there
+     * is no video track selected. */
+    ES_OUT_VIDEO_HISTORY_RESET, /* res=can fail */
+
     /* First value usable for private control */
     ES_OUT_PRIVATE_START = 0x10000,
 };

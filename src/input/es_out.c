@@ -631,6 +631,7 @@ static void EsOutChangePosition( es_out_t *out )
         if( p_es->p_dec != NULL )
         {
             input_DecoderFlush( p_es->p_dec );
+            input_DecoderHistoryReset( p_es->p_dec );
             if( !p_sys->b_buffering )
             {
                 input_DecoderStartWait( p_es->p_dec );
@@ -822,7 +823,23 @@ static void EsOutProgramsChangeRate( es_out_t *out )
         input_clock_ChangeRate( p_sys->pgrm[i]->p_clock, p_sys->i_rate );
 }
 
-static void EsOutFrameNext( es_out_t *out )
+/**
+ * Finds the master (non-slave) video ES with an active decoder, if any.
+ * Used by the various single-video-track queries (frame-next stepping,
+ * reverse-frame history) that only ever apply to that one track.
+ */
+static es_out_id_t *EsOutFindMasterVideoES( es_out_sys_t *p_sys )
+{
+    for( int i = 0; i < p_sys->i_es; i++ )
+    {
+        es_out_id_t *p_es = p_sys->es[i];
+        if( p_es->p_master == NULL && p_es->fmt.i_cat == VIDEO_ES && p_es->p_dec )
+            return p_es;
+    }
+    return NULL;
+}
+
+static void EsOutFrameNext( es_out_t *out, vlc_tick_t *pi_duration_out )
 {
     es_out_sys_t *p_sys = out->p_sys;
 
@@ -846,6 +863,8 @@ static void EsOutFrameNext( es_out_t *out )
         if( p_sys->p_next_frame_es == NULL )
         {
             msg_Warn( p_sys->p_input, "No video track selected, ignoring 'frame next'" );
+            if( pi_duration_out )
+                *pi_duration_out = 0;
             return;
         }
     }
@@ -854,6 +873,9 @@ static void EsOutFrameNext( es_out_t *out )
     input_DecoderFrameNext( p_sys->p_next_frame_es->p_dec, &i_duration );
 
     msg_Dbg( out->p_sys->p_input, "EsOutFrameNext consummed %d ms", (int)(i_duration/1000) );
+
+    if( pi_duration_out )
+        *pi_duration_out = i_duration;
 }
 static vlc_tick_t EsOutGetBuffering( es_out_t *out )
 {
@@ -2819,8 +2841,56 @@ static int EsOutControlLocked( es_out_t *out, int i_query, va_list args )
     }
 
     case ES_OUT_SET_FRAME_NEXT:
-        EsOutFrameNext( out );
+    {
+        vlc_tick_t *pi_duration = va_arg( args, vlc_tick_t * );
+        EsOutFrameNext( out, pi_duration );
         return VLC_SUCCESS;
+    }
+
+    case ES_OUT_VIDEO_HISTORY_STEP_BACK:
+    {
+        vlc_tick_t *pi_date = va_arg( args, vlc_tick_t * );
+        es_out_id_t *p_video_es = EsOutFindMasterVideoES( p_sys );
+
+        if( p_video_es == NULL )
+            return VLC_EGENERIC;
+
+        return input_DecoderHistoryStepBack( p_video_es->p_dec, pi_date );
+    }
+
+    case ES_OUT_VIDEO_HISTORY_STEP_FORWARD:
+    {
+        vlc_tick_t *pi_date = va_arg( args, vlc_tick_t * );
+        es_out_id_t *p_video_es = EsOutFindMasterVideoES( p_sys );
+
+        if( p_video_es == NULL )
+            return VLC_EGENERIC;
+
+        return input_DecoderHistoryStepForward( p_video_es->p_dec, pi_date );
+    }
+
+    case ES_OUT_VIDEO_HISTORY_IS_ACTIVE:
+    {
+        bool *pb_active = va_arg( args, bool * );
+        es_out_id_t *p_video_es = EsOutFindMasterVideoES( p_sys );
+
+        if( p_video_es == NULL )
+            return VLC_EGENERIC;
+
+        *pb_active = input_DecoderHistoryIsActive( p_video_es->p_dec );
+        return VLC_SUCCESS;
+    }
+
+    case ES_OUT_VIDEO_HISTORY_RESET:
+    {
+        es_out_id_t *p_video_es = EsOutFindMasterVideoES( p_sys );
+
+        if( p_video_es == NULL )
+            return VLC_EGENERIC;
+
+        input_DecoderHistoryReset( p_video_es->p_dec );
+        return VLC_SUCCESS;
+    }
 
     case ES_OUT_SET_TIMES:
     {

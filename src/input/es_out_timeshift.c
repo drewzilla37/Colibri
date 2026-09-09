@@ -615,11 +615,11 @@ static int ControlLockedSetTime( es_out_t *p_out, vlc_tick_t i_date )
     msg_Err( p_sys->p_input, "EsOutTimeshift does not yet support time change" );
     return VLC_EGENERIC;
 }
-static int ControlLockedSetFrameNext( es_out_t *p_out )
+static int ControlLockedSetFrameNext( es_out_t *p_out, vlc_tick_t *pi_duration )
 {
     es_out_sys_t *p_sys = p_out->p_sys;
 
-    return es_out_SetFrameNext( p_sys->p_out );
+    return es_out_SetFrameNext( p_sys->p_out, pi_duration );
 }
 
 static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
@@ -716,7 +716,8 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
     }
     case ES_OUT_SET_FRAME_NEXT:
     {
-        return ControlLockedSetFrameNext( p_out );
+        vlc_tick_t *pi_duration = va_arg( args, vlc_tick_t * );
+        return ControlLockedSetFrameNext( p_out, pi_duration );
     }
 
     case ES_OUT_GET_PCR_SYSTEM:
@@ -725,6 +726,10 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
         /* fall through */
     case ES_OUT_GET_GROUP_FORCED:
     case ES_OUT_POST_SUBNODE:
+    case ES_OUT_VIDEO_HISTORY_STEP_BACK:
+    case ES_OUT_VIDEO_HISTORY_STEP_FORWARD:
+    case ES_OUT_VIDEO_HISTORY_IS_ACTIVE:
+    case ES_OUT_VIDEO_HISTORY_RESET:
         return es_out_vaControl( p_sys->p_out, i_query, args );
 
     case ES_OUT_MODIFY_PCR_SYSTEM:
