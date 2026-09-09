@@ -43,6 +43,8 @@
 #include <vlc_meta.h>
 #include <vlc_dialog.h>
 #include <vlc_modules.h>
+#include <vlc_image.h>
+#include <vlc_filter.h>
 
 #include "audio_output/aout_internal.h"
 #include "stream_output/stream_output.h"
@@ -63,6 +65,8 @@ enum reload
     RELOAD_DECODER,     /* Reload the decoder module */
     RELOAD_DECODER_AOUT /* Stop the aout and reload the decoder module */
 };
+
+static void DecoderHistoryUploadDelete( filter_t * );
 
 struct decoder_owner_sys_t
 {
@@ -141,6 +145,49 @@ struct decoder_owner_sys_t
 
     /* Delay */
     vlc_tick_t i_ts_delay;
+
+    /* Reverse-frame history: a ring buffer of independently-allocated
+     * (never pool-owned) deep copies of recently-decoded video pictures,
+     * used for instant backward stepping without seeking/re-decoding.
+     * Only ever populated for the video track; irrelevant fields for
+     * other tracks. Guarded by its own lock, separate from the general
+     * decoder lock above, since push (decoder thread) and step (input
+     * thread, only while paused) rarely overlap and this keeps the
+     * feature's locking independent of the more complex pause/fifo
+     * synchronization already happening elsewhere in this file. */
+    struct
+    {
+        vlc_mutex_t  lock;
+        picture_t  **pp_pictures; /* ring buffer, size i_capacity */
+        /* Each entry's display date, i.e. the post-DecoderFixTs system-clock
+         * value also carried by the picture. This is what frames are selected
+         * by, since it is directly comparable with what the vout reports as
+         * being on screen. */
+        vlc_tick_t  *p_dates;
+        /* The same frame's stream timestamp, captured before DecoderFixTs
+         * rebased it. Only this one means anything to a seek, so it is what
+         * resuming playback from a browsed frame must use. */
+        vlc_tick_t  *p_stream_dates;
+        int          i_capacity;  /* 0 until sized from the first frame */
+        int          i_count;     /* valid entries currently held, <= i_capacity */
+        int          i_head;      /* index of the most-recently-pushed entry */
+
+        /* Lazily-created converter used to download hardware-decoded
+         * (opaque, i_planes == 0) pictures to a plain CPU picture before
+         * buffering - see DecoderHistoryPush(). Touched only from the
+         * decoder thread, same as every other picture the decoder
+         * produces, so it needs no separate lock. */
+        image_handler_t *p_image;
+
+        /* Lazily-created converter for the opposite direction: turning a
+         * buffered system-memory frame back into whatever chroma the vout
+         * pool hands out (an opaque GPU format under hardware decoding).
+         * Touched only from the input thread while stepping. */
+        filter_t *p_upload;
+        /* vout the cached converter was built against, so it is rebuilt if
+         * the decoder is handed a different one. Compared only, never held. */
+        vout_thread_t *p_upload_vout;
+    } history;
 };
 
 /* Pictures which are DECODER_BOGUS_VIDEO_DELAY or more in advance probably have
@@ -997,6 +1044,170 @@ static int DecoderQueueCc( decoder_t *p_videodec, block_t *p_cc,
     return 0;
 }
 
+/**
+ * Deep-copies a just-decoded video picture into the reverse-frame history
+ * ring buffer, evicting the oldest entry if the ring is already full.
+ * Deliberately never touches the vout's own (bounded, blocking) picture
+ * pool: the copy is independently allocated via picture_NewFromFormat(),
+ * so holding many of these can never stall the decoder thread waiting
+ * for a pool slot.
+ */
+/**
+ * Downloads a hardware-decoded (opaque, i_planes == 0) picture to a plain
+ * CPU picture using VLC's own "video converter" module infrastructure -
+ * the same mechanism snapshot/thumbnailing uses - rather than touching any
+ * hardware API directly here. Returns NULL if the specific opaque chroma
+ * has no registered CPU converter (feature just stays unavailable for that
+ * picture, same as before). Caller must picture_Release() the result.
+ */
+static picture_t *DecoderHistoryDownload( decoder_t *p_dec, picture_t *p_picture )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+    vlc_fourcc_t i_target_chroma;
+
+    /* Deliberately I420/I420_10L rather than the NV12/P010 that these GPU
+     * surfaces natively hold. Going back the other way (see
+     * DecoderHistoryUpload) runs through the same d3d11 converter, and its
+     * upload path only builds the intermediate CPU filter it unconditionally
+     * dereferences when the source chroma differs from the texture's own -
+     * handing it the native chroma crashes inside the module. */
+    switch( p_picture->format.i_chroma )
+    {
+        case VLC_CODEC_D3D11_OPAQUE:
+        case VLC_CODEC_D3D9_OPAQUE:
+            i_target_chroma = VLC_CODEC_I420;
+            break;
+        case VLC_CODEC_D3D11_OPAQUE_10B:
+        case VLC_CODEC_D3D9_OPAQUE_10B:
+            i_target_chroma = VLC_CODEC_I420_10L;
+            break;
+        default:
+            return NULL; /* no known CPU download path for this chroma */
+    }
+
+    if( p_owner->history.p_image == NULL )
+    {
+        p_owner->history.p_image = image_HandlerCreate( p_dec );
+        if( p_owner->history.p_image == NULL )
+            return NULL;
+    }
+
+    video_format_t fmt_out;
+    video_format_Init( &fmt_out, i_target_chroma );
+
+    return image_Convert( p_owner->history.p_image, p_picture,
+                           &p_picture->format, &fmt_out );
+}
+
+static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
+                                 vlc_tick_t i_stream_date )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    int i_budget_mb = var_InheritInteger( p_dec, "frame-history-mb" );
+    if( i_budget_mb <= 0 )
+        return; /* feature disabled */
+
+    /* A picture forced through undated (b_force, e.g. the first one after a
+     * wait) would sort wrongly against every other entry and break the
+     * date-based lookups below, so it is simply not worth buffering. */
+    if( p_picture->date <= VLC_TICK_INVALID )
+        return;
+
+    /* Hardware-accelerated decode (D3D11VA/DXVA2/...) hands us an opaque
+     * picture backed by a GPU surface from a small, fixed-size hardware
+     * pool - it reports i_planes == 0 (see fourcc.c's FAKE_FMT chroma
+     * descriptions, "Cannot be manipulated directly"). Deep-copying such a
+     * picture via picture_Copy() is not a plain memcpy: it would duplicate
+     * a reference into that hardware pool instead, risking exhausting it.
+     * Download it to a plain CPU picture first - this is real per-frame
+     * work (a GPU readback), done here on the decoder thread, only while
+     * the feature is enabled. */
+    bool b_downloaded = false;
+    picture_t *p_src = p_picture;
+    if( p_picture->i_planes == 0 )
+    {
+        p_src = DecoderHistoryDownload( p_dec, p_picture );
+        if( p_src == NULL )
+            return; /* no CPU converter available for this chroma */
+        b_downloaded = true;
+    }
+
+    vlc_mutex_lock( &p_owner->history.lock );
+
+    if( p_owner->history.i_capacity == 0 )
+    {
+        /* Size the ring the first time we see a real frame, from its
+         * actual plane geometry - accurate regardless of pixel format
+         * or chroma subsampling, unlike a hand-rolled width*height*bpp
+         * formula. */
+        size_t frame_bytes = 0;
+        for( int i = 0; i < p_src->i_planes; i++ )
+            frame_bytes += (size_t)p_src->p[i].i_pitch
+                          * (size_t)p_src->p[i].i_lines;
+
+        if( frame_bytes == 0 )
+        {
+            vlc_mutex_unlock( &p_owner->history.lock );
+            if( b_downloaded )
+                picture_Release( p_src );
+            return;
+        }
+
+        int i_capacity = (int)(((uint64_t)i_budget_mb * 1024 * 1024) / frame_bytes);
+        if( i_capacity < 1 )
+            i_capacity = 1;
+
+        picture_t **pp = calloc( i_capacity, sizeof( picture_t * ) );
+        vlc_tick_t *pd = calloc( i_capacity, sizeof( vlc_tick_t ) );
+        vlc_tick_t *ps = calloc( i_capacity, sizeof( vlc_tick_t ) );
+        if( pp == NULL || pd == NULL || ps == NULL )
+        {
+            free( pp );
+            free( pd );
+            free( ps );
+            vlc_mutex_unlock( &p_owner->history.lock );
+            if( b_downloaded )
+                picture_Release( p_src );
+            return;
+        }
+        p_owner->history.pp_pictures = pp;
+        p_owner->history.p_dates = pd;
+        p_owner->history.p_stream_dates = ps;
+        p_owner->history.i_capacity = i_capacity;
+        msg_Dbg( p_dec, "frame history: sized for %d frames (%d MB budget, "
+                 "%zu bytes/frame)", i_capacity, i_budget_mb, frame_bytes );
+    }
+
+    picture_t *p_copy = picture_NewFromFormat( &p_src->format );
+    if( p_copy == NULL )
+    {
+        vlc_mutex_unlock( &p_owner->history.lock );
+        if( b_downloaded )
+            picture_Release( p_src );
+        return;
+    }
+    picture_Copy( p_copy, p_src );
+    p_copy->date = p_picture->date;
+
+    if( b_downloaded )
+        picture_Release( p_src );
+
+    int i_next = ( p_owner->history.i_head + 1 ) % p_owner->history.i_capacity;
+
+    if( p_owner->history.pp_pictures[i_next] != NULL )
+        picture_Release( p_owner->history.pp_pictures[i_next] );
+
+    p_owner->history.pp_pictures[i_next] = p_copy;
+    p_owner->history.p_dates[i_next] = p_picture->date;
+    p_owner->history.p_stream_dates[i_next] = i_stream_date;
+    p_owner->history.i_head = i_next;
+    if( p_owner->history.i_count < p_owner->history.i_capacity )
+        p_owner->history.i_count++;
+
+    vlc_mutex_unlock( &p_owner->history.lock );
+}
+
 static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
                              unsigned *restrict pi_lost_sum )
 {
@@ -1052,6 +1263,10 @@ static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
 
     const bool b_dated = p_picture->date > VLC_TICK_INVALID;
     int i_rate = INPUT_RATE_DEFAULT;
+    /* DecoderFixTs() rebases the picture onto the output clock in place, so
+     * grab the stream timestamp first: it is the only one a seek understands,
+     * and resuming from a browsed frame needs it. */
+    const vlc_tick_t i_stream_date = p_picture->date;
     DecoderFixTs( p_dec, &p_picture->date, NULL, NULL,
                   &i_rate, DECODER_BOGUS_VIDEO_DELAY );
 
@@ -1077,6 +1292,7 @@ static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
             vout_Flush( p_vout, p_picture->date );
             p_owner->i_last_rate = i_rate;
         }
+        DecoderHistoryPush( p_dec, p_picture, i_stream_date );
         vout_PutPicture( p_vout, p_picture );
     }
     else
@@ -1723,6 +1939,17 @@ static decoder_t * CreateDecoder( vlc_object_t *p_parent,
     vlc_cond_init( &p_owner->wait_fifo );
     vlc_cond_init( &p_owner->wait_timed );
 
+    vlc_mutex_init( &p_owner->history.lock );
+    p_owner->history.pp_pictures = NULL;
+    p_owner->history.p_dates = NULL;
+    p_owner->history.p_stream_dates = NULL;
+    p_owner->history.i_capacity = 0;
+    p_owner->history.i_count = 0;
+    p_owner->history.i_head = -1; /* -1: nothing pushed yet, next push lands at index 0 */
+    p_owner->history.p_image = NULL;
+    p_owner->history.p_upload = NULL;
+    p_owner->history.p_upload_vout = NULL;
+
     /* Set buffers allocation callbacks for the decoders */
     p_dec->pf_aout_format_update = aout_update_format;
     p_dec->pf_vout_format_update = vout_update_format;
@@ -1874,6 +2101,20 @@ static void DeleteDecoder( decoder_t * p_dec )
         UnloadDecoder( p_owner->p_packetizer );
         vlc_object_release( p_owner->p_packetizer );
     }
+
+    vlc_mutex_lock( &p_owner->history.lock );
+    for( int i = 0; i < p_owner->history.i_capacity; i++ )
+        if( p_owner->history.pp_pictures[i] != NULL )
+            picture_Release( p_owner->history.pp_pictures[i] );
+    free( p_owner->history.pp_pictures );
+    free( p_owner->history.p_dates );
+    free( p_owner->history.p_stream_dates );
+    if( p_owner->history.p_image != NULL )
+        image_HandlerDelete( p_owner->history.p_image );
+    if( p_owner->history.p_upload != NULL )
+        DecoderHistoryUploadDelete( p_owner->history.p_upload );
+    vlc_mutex_unlock( &p_owner->history.lock );
+    vlc_mutex_destroy( &p_owner->history.lock );
 
     vlc_cond_destroy( &p_owner->wait_timed );
     vlc_cond_destroy( &p_owner->wait_fifo );
@@ -2342,6 +2583,317 @@ void input_DecoderFrameNext( decoder_t *p_dec, vlc_tick_t *pi_duration )
             vout_NextPicture( p_owner->p_vout, pi_duration );
     }
     vlc_mutex_unlock( &p_owner->lock );
+}
+
+/* Lets the converter allocate its destination straight from the vout's own
+ * pool, so whatever it hands back can go to vout_PutPicture() as-is. Called
+ * once while the module is being probed - that is how the D3D11 converter
+ * discovers which hardware device it has to target - and once per conversion. */
+static picture_t *DecoderHistoryUploadBuffer( filter_t *p_filter )
+{
+    return vout_TryGetPicture( p_filter->owner.sys );
+}
+
+static void DecoderHistoryUploadDelete( filter_t *p_filter )
+{
+    if( p_filter->p_module != NULL )
+        module_unneed( p_filter, p_filter->p_module );
+    es_format_Clean( &p_filter->fmt_in );
+    es_format_Clean( &p_filter->fmt_out );
+    vlc_object_release( p_filter );
+}
+
+/**
+ * Converts a buffered system-memory frame into a fresh vout pool picture, for
+ * when the vout expects a different chroma than the one we buffered - the
+ * normal case under hardware decoding, where the pool hands out opaque GPU
+ * pictures. Returns the converted pool picture (caller owns it), or NULL.
+ */
+static picture_t *DecoderHistoryUpload( decoder_t *p_dec, vout_thread_t *p_vout,
+                                         picture_t *p_buffered,
+                                         const video_format_t *p_fmt_out )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+    filter_t *p_filter = p_owner->history.p_upload;
+
+    if( p_filter != NULL
+     && ( p_owner->history.p_upload_vout != p_vout
+       || p_filter->fmt_in.video.i_chroma != p_buffered->format.i_chroma
+       || p_filter->fmt_out.video.i_chroma != p_fmt_out->i_chroma ) )
+    {
+        DecoderHistoryUploadDelete( p_filter );
+        p_filter = p_owner->history.p_upload = NULL;
+    }
+
+    if( p_filter == NULL )
+    {
+        p_filter = vlc_custom_create( p_dec, sizeof(*p_filter), "filter" );
+        if( p_filter == NULL )
+            return NULL;
+
+        /* Must be set before probing: opening the D3D11 converter asks us for
+         * a destination picture in order to find the device behind it. */
+        p_filter->owner.sys = p_vout;
+        p_filter->owner.video.buffer_new = DecoderHistoryUploadBuffer;
+        es_format_InitFromVideo( &p_filter->fmt_in, &p_buffered->format );
+        es_format_InitFromVideo( &p_filter->fmt_out, p_fmt_out );
+
+        p_filter->p_module = module_need( p_filter, "video converter", NULL, false );
+        if( p_filter->p_module == NULL )
+        {
+            msg_Dbg( p_dec, "frame history: no %4.4s -> %4.4s converter",
+                     (const char *)&p_buffered->format.i_chroma,
+                     (const char *)&p_fmt_out->i_chroma );
+            DecoderHistoryUploadDelete( p_filter );
+            return NULL;
+        }
+        p_owner->history.p_upload = p_filter;
+        p_owner->history.p_upload_vout = p_vout;
+    }
+
+    p_filter->owner.sys = p_vout;
+    picture_Hold( p_buffered );
+    return p_filter->pf_video_filter( p_filter, p_buffered );
+}
+
+/**
+ * Displays one already-buffered picture.
+ *
+ * Runs with NO decoder lock held, deliberately. Displaying needs a picture
+ * from the vout's decoder pool, and while paused no picture is ever returned
+ * to that pool - so the blocking vout_GetPicture() would wait forever, and
+ * doing that under p_owner->lock wedges the whole input thread (playback,
+ * frame stepping and even opening another file all stop responding). Hence
+ * vout_TryGetPicture(): if the pool happens to be busy this step is simply
+ * dropped, which is recoverable, unlike a deadlock.
+ */
+static int DecoderHistoryDisplay( decoder_t *p_dec, picture_t *p_buffered,
+                                   vlc_tick_t i_date )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    vlc_mutex_lock( &p_owner->lock );
+    vout_thread_t *p_vout = p_owner->p_vout;
+    if( p_vout != NULL )
+        vlc_object_hold( p_vout );
+    vlc_mutex_unlock( &p_owner->lock );
+
+    if( p_vout == NULL )
+        return VLC_EGENERIC;
+
+    int i_ret = VLC_EGENERIC;
+
+    /* Take the display over before queuing anything: drop whatever the vout
+     * still holds ahead of the viewer. Those queued frames are exactly the
+     * ones stepping away from, and since vout_PutPicture() appends to a FIFO,
+     * leaving them in place would make the forced step below show the oldest
+     * queued frame rather than ours - the display would creep forwards one
+     * frame per keypress instead of following us. Flushing also frees the
+     * pool slot we are about to need, which while paused nothing else would
+     * ever return. */
+    vout_Flush( p_vout, VLC_TICK_INVALID + 1 );
+
+    picture_t *p_out = vout_TryGetPicture( p_vout );
+    if( p_out == NULL )
+    {
+        msg_Dbg( p_dec, "frame history: no free picture to display into" );
+        goto end;
+    }
+
+    /* The pool hands out pictures in the vout's own input format. With
+     * hardware decoding that is an opaque GPU format while the buffered frame
+     * lives in system memory, and picture_Copy() cannot bridge the two - go
+     * back through a converter for that case, which draws its own destination
+     * from the same pool. */
+    if( p_out->format.i_chroma != p_buffered->format.i_chroma )
+    {
+        video_format_t fmt_out;
+        int i_copy = video_format_Copy( &fmt_out, &p_out->format );
+        picture_Release( p_out );
+        if( i_copy != VLC_SUCCESS )
+            goto end;
+
+        p_out = DecoderHistoryUpload( p_dec, p_vout, p_buffered, &fmt_out );
+        video_format_Clean( &fmt_out );
+        if( p_out == NULL )
+            goto end;
+    }
+    else
+        picture_Copy( p_out, p_buffered );
+
+    p_out->date = i_date;
+    p_out->b_force = true;
+    vout_PutPicture( p_vout, p_out );
+
+    /* While paused the vout does not display what it is handed until it is
+     * explicitly stepped - same mechanism the existing next-frame hotkey
+     * relies on. */
+    vlc_tick_t i_dummy;
+    vout_NextPicture( p_vout, &i_dummy );
+    i_ret = VLC_SUCCESS;
+
+end:
+    vlc_object_release( p_vout );
+    return i_ret;
+}
+
+/**
+ * Reads the date of the picture the vout actually has on screen.
+ *
+ * This, not the ring head, is what stepping has to be measured against. The
+ * ring is filled at hand-off - DecoderHistoryPush() runs just before
+ * vout_PutPicture() - while the vout displays from a queue behind that, so
+ * the newest buffered frame is typically several frames ahead of the viewer.
+ * How far ahead depends on how fast the content decodes, which is why a
+ * cheap-to-decode clip could step the wrong way entirely while an expensive
+ * one looked correct.
+ */
+static int DecoderHistoryGetDisplayedDate( vout_thread_t *p_vout,
+                                            vlc_tick_t *pi_date )
+{
+    vlc_tick_t i_date = VLC_TICK_INVALID;
+
+    vout_GetDisplayedDate( p_vout, &i_date );
+    if( i_date <= VLC_TICK_INVALID )
+        return VLC_EGENERIC;
+
+    *pi_date = i_date;
+    return VLC_SUCCESS;
+}
+
+/**
+ * Selects the buffered frame adjacent to i_ref in time and displays it:
+ * b_backwards picks the newest entry strictly older than i_ref, otherwise the
+ * oldest entry strictly newer.
+ *
+ * Selection is by timestamp rather than by an index counted back from the
+ * ring head, so a frame the decoder happens to push mid-step cannot shift
+ * which frame is chosen. Every press re-derives its own starting point from
+ * what is actually on screen, so an individual mis-step cannot accumulate.
+ */
+static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
+                                vlc_tick_t *pi_stream_date )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    vlc_mutex_lock( &p_owner->lock );
+    vout_thread_t *p_vout = p_owner->p_vout;
+    if( p_vout != NULL )
+        vlc_object_hold( p_vout );
+    vlc_mutex_unlock( &p_owner->lock );
+
+    if( p_vout == NULL )
+        return VLC_EGENERIC;
+
+    int i_ret = VLC_EGENERIC;
+    vlc_tick_t i_ref;
+    if( DecoderHistoryGetDisplayedDate( p_vout, &i_ref ) != VLC_SUCCESS )
+        goto end;
+
+    vlc_mutex_lock( &p_owner->history.lock );
+
+    int i_best = -1;
+    for( int i = 0; i < p_owner->history.i_capacity; i++ )
+    {
+        if( p_owner->history.pp_pictures[i] == NULL )
+            continue;
+
+        vlc_tick_t i_date = p_owner->history.p_dates[i];
+        if( b_backwards ? i_date >= i_ref : i_date <= i_ref )
+            continue;
+
+        if( i_best == -1
+         || ( b_backwards ? i_date > p_owner->history.p_dates[i_best]
+                          : i_date < p_owner->history.p_dates[i_best] ) )
+            i_best = i;
+    }
+
+    if( i_best == -1 )
+    {
+        vlc_mutex_unlock( &p_owner->history.lock );
+        goto end; /* nothing buffered on that side of the current frame */
+    }
+
+    picture_t *p_buffered = p_owner->history.pp_pictures[i_best];
+    picture_Hold( p_buffered );
+    vlc_tick_t i_date = p_owner->history.p_dates[i_best];
+    vlc_tick_t i_stream_date = p_owner->history.p_stream_dates[i_best];
+
+    msg_Dbg( p_dec, "frame history: step %s, on screen %"PRId64
+             " -> %"PRId64" (delta %"PRId64", %d frames held)",
+             b_backwards ? "back" : "forward", i_ref, i_date,
+             i_date - i_ref, p_owner->history.i_count );
+
+    vlc_mutex_unlock( &p_owner->history.lock );
+
+    i_ret = DecoderHistoryDisplay( p_dec, p_buffered, i_date );
+    picture_Release( p_buffered );
+
+    if( i_ret == VLC_SUCCESS )
+        *pi_stream_date = i_stream_date;
+
+end:
+    vlc_object_release( p_vout );
+    return i_ret;
+}
+
+int input_DecoderHistoryStepBack( decoder_t *p_dec, vlc_tick_t *pi_stream_date )
+{
+    return DecoderHistoryStep( p_dec, true, pi_stream_date );
+}
+
+int input_DecoderHistoryStepForward( decoder_t *p_dec, vlc_tick_t *pi_stream_date )
+{
+    return DecoderHistoryStep( p_dec, false, pi_stream_date );
+}
+
+bool input_DecoderHistoryIsActive( decoder_t *p_dec )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    vlc_mutex_lock( &p_owner->lock );
+    vout_thread_t *p_vout = p_owner->p_vout;
+    if( p_vout != NULL )
+        vlc_object_hold( p_vout );
+    vlc_mutex_unlock( &p_owner->lock );
+
+    if( p_vout == NULL )
+        return false;
+
+    /* Browsing history means the screen is showing something older than the
+     * newest frame we hold. */
+    bool b_active = false;
+    vlc_tick_t i_ref;
+    if( DecoderHistoryGetDisplayedDate( p_vout, &i_ref ) == VLC_SUCCESS )
+    {
+        vlc_mutex_lock( &p_owner->history.lock );
+        if( p_owner->history.i_count > 0 && p_owner->history.i_head >= 0 )
+            b_active = i_ref < p_owner->history.p_dates[p_owner->history.i_head];
+        vlc_mutex_unlock( &p_owner->history.lock );
+    }
+
+    vlc_object_release( p_vout );
+    return b_active;
+}
+
+void input_DecoderHistoryReset( decoder_t *p_dec )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    vlc_mutex_lock( &p_owner->history.lock );
+    for( int i = 0; i < p_owner->history.i_capacity; i++ )
+        if( p_owner->history.pp_pictures[i] != NULL )
+            picture_Release( p_owner->history.pp_pictures[i] );
+    free( p_owner->history.pp_pictures );
+    free( p_owner->history.p_dates );
+    free( p_owner->history.p_stream_dates );
+    p_owner->history.pp_pictures = NULL;
+    p_owner->history.p_dates = NULL;
+    p_owner->history.p_stream_dates = NULL;
+    p_owner->history.i_capacity = 0;
+    p_owner->history.i_count = 0;
+    p_owner->history.i_head = -1;
+    vlc_mutex_unlock( &p_owner->history.lock );
 }
 
 bool input_DecoderHasFormatChanged( decoder_t *p_dec, es_format_t *p_fmt, vlc_meta_t **pp_meta )

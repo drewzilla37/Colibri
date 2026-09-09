@@ -86,6 +86,37 @@ void input_DecoderGetCcDesc( decoder_t *, decoder_cc_desc_t * );
 void input_DecoderFrameNext( decoder_t *p_dec, vlc_tick_t *pi_duration );
 
 /**
+ * Displays the buffered frame immediately before the one currently on
+ * screen - no seek, no re-decode. The reference point is what the vout is
+ * actually displaying, not the newest buffered frame, since the decoder
+ * runs ahead of the display by a margin that varies with decode cost.
+ * *pi_stream_date receives the displayed frame's stream timestamp, which
+ * is the one a seek understands.
+ * Returns VLC_EGENERIC if the buffer is disabled or empty, or if nothing
+ * older than the current frame is held.
+ */
+int input_DecoderHistoryStepBack( decoder_t *p_dec, vlc_tick_t *pi_stream_date );
+
+/**
+ * Displays the buffered frame immediately after the one on screen.
+ * Returns VLC_EGENERIC (harmlessly) when nothing newer is buffered - the
+ * caller should fall back to a real forward decode step in that case.
+ */
+int input_DecoderHistoryStepForward( decoder_t *p_dec, vlc_tick_t *pi_stream_date );
+
+/**
+ * Returns true if the video track is currently displaying a frame from
+ * its reverse-frame history buffer rather than the live decoded frame.
+ */
+bool input_DecoderHistoryIsActive( decoder_t *p_dec );
+
+/**
+ * Clears the reverse-frame history buffer, e.g. after a seek or other
+ * discontinuity, so it never spans a jump in the timeline.
+ */
+void input_DecoderHistoryReset( decoder_t *p_dec );
+
+/**
  * This function will return true if the ES format or meta data have changed since
  * the last call. In which case, it will do a copy of the current es_format_t if p_fmt
  * is not NULL and will do a copy of the current description if pp_meta is non NULL.
