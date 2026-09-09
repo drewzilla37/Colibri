@@ -1805,7 +1805,21 @@ static void ControlUnpause( input_thread_t *p_input, vlc_tick_t i_control_date )
     input_ChangeState( p_input, PLAYING_S );
     es_out_SetPauseState( input_priv(p_input)->p_es_out, false, false, i_control_date );
 
-    if( input_priv(p_input)->b_next_frame )
+    bool b_history_active;
+    if( !es_out_VideoHistoryIsActive( input_priv(p_input)->p_es_out, &b_history_active )
+     && b_history_active )
+    {
+        /* The real demux/decode pipeline never moved while we were
+         * stepping through the reverse-frame history - only the display
+         * did. Resync it to what's actually on screen before resuming,
+         * otherwise playback would jump forward to the stale live
+         * position instead of continuing from the displayed frame. This
+         * seek also resets the history buffer (see EsOutChangePosition),
+         * which is the desired end state: offset back to 0. */
+        vlc_value_t val = { .i_int = input_priv(p_input)->i_history_view_date };
+        Control( p_input, INPUT_CONTROL_SET_TIME, val );
+    }
+    else if( input_priv(p_input)->b_next_frame )
     {
         input_priv(p_input)->b_next_frame = false;
         int64_t i_time;
@@ -2377,8 +2391,23 @@ static bool Control( input_thread_t *p_input,
         case INPUT_CONTROL_SET_FRAME_NEXT:
             if( input_priv(p_input)->i_state == PAUSE_S )
             {
-                input_priv(p_input)->b_next_frame = true;
-                es_out_SetFrameNext( input_priv(p_input)->p_es_out );
+                /* If we are currently viewing a frame from the reverse
+                 * history buffer, step forward through that history
+                 * first rather than asking the decoder for a brand new
+                 * frame - the two would otherwise diverge. Only once the
+                 * live edge is reached does a real decode step happen. */
+                vlc_tick_t i_history_date;
+                if( es_out_VideoHistoryStepForward( input_priv(p_input)->p_es_out,
+                                                     &i_history_date ) )
+                {
+                    /* Already at the live edge: fall back to a real step. */
+                    input_priv(p_input)->b_next_frame = true;
+                    es_out_SetFrameNext( input_priv(p_input)->p_es_out, NULL );
+                }
+                else
+                {
+                    input_priv(p_input)->i_history_view_date = i_history_date;
+                }
             }
             else if( input_priv(p_input)->i_state == PLAYING_S )
             {
@@ -2387,6 +2416,43 @@ static bool Control( input_thread_t *p_input,
             else
             {
                 msg_Err( p_input, "invalid state for frame next" );
+            }
+            b_force_update = true;
+            break;
+
+        case INPUT_CONTROL_SET_FRAME_PREV:
+            if( input_priv(p_input)->i_state == PAUSE_S )
+            {
+                vlc_tick_t i_history_date;
+                if( !es_out_VideoHistoryStepBack( input_priv(p_input)->p_es_out,
+                                                   &i_history_date ) )
+                {
+                    input_priv(p_input)->i_history_view_date = i_history_date;
+                }
+                else
+                {
+                    msg_Warn( p_input, "INPUT_CONTROL_SET_FRAME_PREV: "
+                              "reverse frame history exhausted or "
+                              "unavailable" );
+
+                    vout_thread_t **pp_vout;
+                    size_t i_vout;
+                    input_resource_HoldVouts( input_priv(p_input)->p_resource,
+                                               &pp_vout, &i_vout );
+                    if( i_vout > 0 )
+                    {
+                        vout_FlushSubpictureChannel( pp_vout[0], VOUT_SPU_CHANNEL_OSD );
+                        vout_OSDMessage( pp_vout[0], VOUT_SPU_CHANNEL_OSD,
+                                          "%s", _( "Reverse limit reached" ) );
+                    }
+                    for( size_t i = 0; i < i_vout; ++i )
+                        vlc_object_release( pp_vout[i] );
+                    free( pp_vout );
+                }
+            }
+            else
+            {
+                msg_Err( p_input, "invalid state for frame prev" );
             }
             b_force_update = true;
             break;

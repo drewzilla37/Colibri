@@ -600,6 +600,14 @@ static int PutAction( intf_thread_t *p_intf, input_thread_t *p_input,
             }
             break;
 
+        case ACTIONID_FRAME_PREV:
+            if( p_input )
+            {
+                var_TriggerCallback( p_input, "frame-prev" );
+                DisplayMessage( p_vout, _("Previous frame") );
+            }
+            break;
+
         case ACTIONID_SUBSYNC_MARKAUDIO:
         {
             p_sys->subtitle_delaybookmarks.i_time_audio = mdate();

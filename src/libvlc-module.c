@@ -514,6 +514,15 @@ static const char *const ppsz_pos_descriptions[] =
 #define NETWORK_CACHING_LONGTEXT N_( \
     "Caching value for network resources, in milliseconds." )
 
+#define FRAME_HISTORY_TEXT N_("Reverse frame history size (MB)")
+#define FRAME_HISTORY_LONGTEXT N_( \
+    "Amount of memory, in megabytes, to spend keeping recently-decoded " \
+    "video frames around so that stepping backward one frame at a time " \
+    "(Shift+E by default) can redisplay them instantly instead of " \
+    "seeking and re-decoding. The actual number of frames this buys " \
+    "depends on the video's resolution: higher resolutions fit fewer " \
+    "frames per megabyte. Set to 0 to disable the feature entirely." )
+
 #define CR_AVERAGE_TEXT N_("Clock reference average counter")
 #define CR_AVERAGE_LONGTEXT N_( \
     "When using the PVR input (or a very irregular source), you should " \
@@ -1280,6 +1289,9 @@ static const char *const mouse_wheel_texts[] = {
 #define FRAME_NEXT_KEY_TEXT N_("Next frame")
 #define FRAME_NEXT_KEY_LONGTEXT \
     N_("Select the hotkey to got to the next video frame.")
+#define FRAME_PREV_KEY_TEXT N_("Previous frame")
+#define FRAME_PREV_KEY_LONGTEXT \
+    N_("Select the hotkey to go to the previous video frame.")
 
 #define JIEXTRASHORT_TEXT N_("Very short jump length")
 #define JIEXTRASHORT_LONGTEXT N_("Very short jump length, in seconds.")
@@ -1865,6 +1877,9 @@ vlc_module_begin ()
                  CACHING_TEXT, CACHING_LONGTEXT, true )
         change_integer_range( 0, 60000 )
         change_safe()
+    add_integer( "frame-history-mb", 256,
+                 FRAME_HISTORY_TEXT, FRAME_HISTORY_LONGTEXT, true )
+        change_integer_range( 0, 8192 )
     add_obsolete_integer( "vdr-caching" ) /* 2.0.0 */
     add_integer( "live-caching", DEFAULT_PTS_DELAY / 1000,
                  CAPTURE_CACHING_TEXT, CAPTURE_CACHING_LONGTEXT, true )
@@ -2242,6 +2257,7 @@ vlc_module_begin ()
 #   define KEY_JUMP_MLONG         "Command+Shift+Alt+Left"
 #   define KEY_JUMP_PLONG         "Command+Shift+Alt+Right"
 #   define KEY_FRAME_NEXT         "e"
+#   define KEY_FRAME_PREV         "Shift+e"
 #   define KEY_NAV_ACTIVATE       "Enter"
 #   define KEY_NAV_UP             "Up"
 #   define KEY_NAV_DOWN           "Down"
@@ -2384,11 +2400,13 @@ vlc_module_begin ()
 #   define KEY_VOL_DOWN           "Ctrl+Down"
 #   define KEY_VOL_MUTE           "m"
 #   define KEY_FRAME_NEXT         "e"
+#   define KEY_FRAME_PREV         "Shift+e"
 #else
 #   define KEY_VOL_UP             "Ctrl+Up\tVolume Up"
 #   define KEY_VOL_DOWN           "Ctrl+Down\tVolume Down"
 #   define KEY_VOL_MUTE           "m\tVolume Mute"
 #   define KEY_FRAME_NEXT         "e\tBrowser Next"
+#   define KEY_FRAME_PREV         "Shift+e"
 #endif
 
 #   define KEY_SUBDELAY_UP        "h"
@@ -2530,6 +2548,8 @@ vlc_module_begin ()
              JFLONG_KEY_LONGTEXT, false )
     add_key( "key-frame-next", KEY_FRAME_NEXT, FRAME_NEXT_KEY_TEXT,
              FRAME_NEXT_KEY_LONGTEXT, false )
+    add_key( "key-frame-prev", KEY_FRAME_PREV, FRAME_PREV_KEY_TEXT,
+             FRAME_PREV_KEY_LONGTEXT, false )
     add_key( "key-nav-activate", KEY_NAV_ACTIVATE, NAV_ACTIVATE_KEY_TEXT,
              NAV_ACTIVATE_KEY_LONGTEXT, true )
     add_key( "key-nav-up", KEY_NAV_UP, NAV_UP_KEY_TEXT,

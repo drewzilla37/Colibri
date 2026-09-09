@@ -75,6 +75,9 @@ static int RecordCallback( vlc_object_t *p_this, char const *psz_cmd,
 static int FrameNextCallback( vlc_object_t *p_this, char const *psz_cmd,
                               vlc_value_t oldval, vlc_value_t newval,
                               void *p_data );
+static int FramePrevCallback( vlc_object_t *p_this, char const *psz_cmd,
+                              vlc_value_t oldval, vlc_value_t newval,
+                              void *p_data );
 
 typedef struct
 {
@@ -108,6 +111,7 @@ static const vlc_input_callback_t p_input_callbacks[] =
     CALLBACK( "spu-es", EsSpuCallback ),
     CALLBACK( "record", RecordCallback ),
     CALLBACK( "frame-next", FrameNextCallback ),
+    CALLBACK( "frame-prev", FramePrevCallback ),
 
     CALLBACK( NULL, NULL )
 };
@@ -139,6 +143,7 @@ void input_ControlVarInit ( input_thread_t *p_input )
     var_Create( p_input, "rate", VLC_VAR_FLOAT | VLC_VAR_DOINHERIT );
 
     var_Create( p_input, "frame-next", VLC_VAR_VOID );
+    var_Create( p_input, "frame-prev", VLC_VAR_VOID );
 
     /* Position */
     var_Create( p_input, "position",  VLC_VAR_FLOAT );
@@ -846,6 +851,19 @@ static int FrameNextCallback( vlc_object_t *p_this, char const *psz_cmd,
     VLC_UNUSED(newval);
 
     input_ControlPush( p_input, INPUT_CONTROL_SET_FRAME_NEXT, NULL );
+
+    return VLC_SUCCESS;
+}
+
+static int FramePrevCallback( vlc_object_t *p_this, char const *psz_cmd,
+                              vlc_value_t oldval, vlc_value_t newval,
+                              void *p_data )
+{
+    input_thread_t *p_input = (input_thread_t*)p_this;
+    VLC_UNUSED(psz_cmd); VLC_UNUSED(oldval); VLC_UNUSED(p_data);
+    VLC_UNUSED(newval);
+
+    input_ControlPush( p_input, INPUT_CONTROL_SET_FRAME_PREV, NULL );
 
     return VLC_SUCCESS;
 }

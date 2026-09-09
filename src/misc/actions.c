@@ -283,6 +283,7 @@ static const struct name2action
     { "disc-menu", ACTIONID_DISC_MENU, },
     { "faster", ACTIONID_FASTER, },
     { "frame-next", ACTIONID_FRAME_NEXT, },
+    { "frame-prev", ACTIONID_FRAME_PREV, },
     { "incr-scalefactor", ACTIONID_SCALE_UP, },
     { "intf-boss", ACTIONID_INTF_BOSS, },
     { "intf-popup-menu", ACTIONID_INTF_POPUP_MENU, },

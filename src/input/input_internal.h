@@ -100,6 +100,13 @@ typedef struct input_thread_private_t
     bool        b_next_frame;
     int         i_rate;
 
+    /* Timestamp of the frame currently displayed from the reverse-frame
+     * history buffer, valid only while that buffer is active (i.e. the
+     * last INPUT_CONTROL_SET_FRAME_PREV/NEXT view offset was > 0).
+     * ControlUnpause() uses it to resync the real pipeline to what's on
+     * screen before resuming live playback. */
+    vlc_tick_t  i_history_view_date;
+
     /* Playtime configuration and state */
     int64_t     i_start;    /* :start-time,0 by default */
     int64_t     i_stop;     /* :stop-time, 0 if none */
@@ -232,6 +239,7 @@ enum input_control_e
     INPUT_CONTROL_SET_RECORD_STATE,
 
     INPUT_CONTROL_SET_FRAME_NEXT,
+    INPUT_CONTROL_SET_FRAME_PREV,
 
     INPUT_CONTROL_SET_RENDERER,
 };
