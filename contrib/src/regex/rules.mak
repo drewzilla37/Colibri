@@ -16,6 +16,7 @@ regex: regex-$(REGEX_VERSION).tar.gz .sum-regex
 	$(UNPACK)
 	$(APPLY) $(SRC)/regex/no-docs.patch
 	$(APPLY) $(SRC)/regex/decls.patch
+	sed -i 's/^#  if defined STDC_HEADERS || defined _LIBC$$/#  if 1/' regex-$(REGEX_VERSION)/regex.c
 	$(MOVE)
 
 .regex: regex

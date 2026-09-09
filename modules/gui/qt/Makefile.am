@@ -35,7 +35,7 @@ if HAVE_XCB
 libqt_plugin_la_CXXFLAGS += -DQT_HAS_XCB
 endif
 if HAVE_WIN32
-libqt_plugin_la_LIBADD += $(LIBCOM) -lcomctl32 -luuid
+libqt_plugin_la_LIBADD += $(LIBCOM) -lcomctl32 -luuid -lwinmm
 endif
 if UPDATE_CHECK
 libqt_plugin_la_CPPFLAGS += -DUPDATE_CHECK

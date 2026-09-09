@@ -27,6 +27,7 @@ FFMPEG_BASENAME := $(subst .,_,$(subst \,_,$(subst /,_,$(FFMPEG_HASH))))
 # bsf=vp9_superframe is needed to mux VP9 inside webm/mkv
 FFMPEGCONF = --prefix="$(PREFIX)" --enable-static --disable-shared \
 	--extra-ldflags="$(LDFLAGS)" \
+	--extra-cflags="-I$(PREFIX)/include" \
 	--cc="$(CC)" \
 	--pkg-config="$(PKG_CONFIG)" \
 	--disable-doc \
