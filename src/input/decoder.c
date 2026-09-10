@@ -2950,17 +2950,51 @@ static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
      * a several second leap into an unrelated frame, and the frame stranded
      * across a preroll is the one decoded before its references, which under
      * hardware decoding is often blank. Doing nothing is the better answer. */
-    if( i_best != -1 && p_owner->history.i_interval > 0 )
+    if( i_best != -1 )
     {
+        /* The measured interval needs two buffered frames to exist, and there
+         * is a case that never gets them: dragging the seek bar while paused
+         * resets the history on every seek and decodes a single frame at each
+         * new position, so the ring never holds more than one. That is also
+         * the case that needs this guard most, because the vout only updates
+         * the date it reports when it actually displays something, and while
+         * paused the seeks outrun the displays, leaving the reference stuck
+         * where it was before the drag while the ring holds the new position.
+         * Fall back to the nominal frame duration so the guard is always
+         * armed. */
+        vlc_tick_t i_interval = p_owner->history.i_interval;
+        if( i_interval <= 0 && p_dec->fmt_in.video.i_frame_rate > 0
+                            && p_dec->fmt_in.video.i_frame_rate_base > 0 )
+            i_interval = CLOCK_FREQ * p_dec->fmt_in.video.i_frame_rate_base
+                                    / p_dec->fmt_in.video.i_frame_rate;
+        if( i_interval <= 0 )
+            i_interval = CLOCK_FREQ / 25;
+
         vlc_tick_t i_jump = p_owner->history.p_dates[i_best] - i_ref;
         if( i_jump < 0 )
             i_jump = -i_jump;
 
-        if( i_jump > p_owner->history.i_interval * 10 )
+        if( i_jump > i_interval * 10 )
         {
-            msg_Dbg( p_dec, "frame history: refusing to step across a %" PRId64
-                     " us hole", i_jump );
-            i_best = -1;
+            /* Either the reference is stale or there is a hole. In both cases
+             * the frame on screen is the one buffered most recently, because
+             * that is the last thing the vout was given, so re-anchor on it
+             * and step from there rather than refuse and appear dead. */
+            msg_Dbg( p_dec, "frame history: reference is %" PRId64 " us from "
+                     "the nearest buffered frame, re-anchoring on the newest",
+                     i_jump );
+
+            i_ref = p_owner->history.p_dates[p_owner->history.i_head];
+            i_best = DecoderHistoryFind( p_owner, i_ref, b_backwards );
+
+            if( i_best != -1 )
+            {
+                i_jump = p_owner->history.p_dates[i_best] - i_ref;
+                if( i_jump < 0 )
+                    i_jump = -i_jump;
+                if( i_jump > i_interval * 10 )
+                    i_best = -1;
+            }
         }
     }
 
