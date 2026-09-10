@@ -4651,6 +4651,8 @@ AC_CONFIG_FILES([
   test/Makefile
   modules/hw/mmal/Makefile
   share/org.videolan.vlc.appdata.xml.in
+  src/vlc-plugin.pc
+  lib/libvlc.pc
 ])
 
 AM_COND_IF([HAVE_WIN32], [
@@ -4658,6 +4660,9 @@ AM_COND_IF([HAVE_WIN32], [
     extras/package/win32/NSIS/spad.nsi
     extras/package/win32/NSIS/vlc.win32.nsi
     extras/package/win32/msi/config.wxi
+    src/libvlc_win32_rc.rc
+    bin/vlc_win32_rc.rc
+    modules/module.rc
   ])
 ])
 
