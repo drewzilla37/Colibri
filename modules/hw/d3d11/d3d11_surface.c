@@ -687,8 +687,21 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
 
     picture_UpdatePlanes(sys->staging_pic, lock.pData, lock.RowPitch);
 
+    /* This writes straight into the mapped staging texture, because NewBuffer
+     * hands it staging_pic as its destination. If it fails the texture keeps
+     * whatever it held, and the copy below puts that on screen: a texture that
+     * has just been created is zeroed, and all-zero YUV is solid green, which
+     * is why a failure here shows up on the first conversion and later ones
+     * merely repeat the previous frame. The returned picture is staging_pic
+     * itself, owned by this filter, so it must not be released here. */
     picture_Hold( src );
-    sys->filter->pf_video_filter(sys->filter, src);
+    if( sys->filter->pf_video_filter(sys->filter, src) == NULL )
+    {
+        msg_Err(p_filter, "chroma conversion into the staging texture failed");
+        ID3D11DeviceContext_Unmap(p_sys->context, sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX], 0);
+        sys->b_conversion_failed = true;
+        return;
+    }
 
     ID3D11DeviceContext_Unmap(p_sys->context, sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX], 0);
 

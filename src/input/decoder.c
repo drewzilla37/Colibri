@@ -2838,7 +2838,11 @@ static int DecoderHistoryDisplay( decoder_t *p_dec, picture_t *p_buffered,
         p_out = DecoderHistoryUpload( p_dec, p_vout, p_buffered, &fmt_out );
         video_format_Clean( &fmt_out );
         if( p_out == NULL )
+        {
+            msg_Dbg( p_dec, "frame history: conversion failed, leaving the "
+                            "frame on screen alone" );
             goto end;
+        }
     }
     else
         picture_Copy( p_out, p_buffered );
@@ -3037,6 +3041,13 @@ static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
 
     i_ret = DecoderHistoryDisplay( p_dec, p_buffered, i_date );
     picture_Release( p_buffered );
+
+    /* The line above says which frame was picked, not that it reached the
+     * screen. Say so explicitly, so a log can tell a step that displayed
+     * nothing apart from one that displayed the wrong thing. */
+    if( i_ret != VLC_SUCCESS )
+        msg_Dbg( p_dec, "frame history: step selected %"PRId64
+                 " but did not display it", i_date );
 
     if( i_ret == VLC_SUCCESS )
     {
