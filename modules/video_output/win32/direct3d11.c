@@ -1379,10 +1379,14 @@ static void FrameCheck(vout_display_t *vd, picture_t *picture)
             for (UINT x = 0; x < SAMPLE; x++)
             {
                 const uint8_t *px = row + (size_t)x * 4;
-                /* index 1 is green in both BGRA and RGBA orderings; the other
-                 * two are the ones that must be dark for this to read green */
+                /* index 1 is green in both BGRA and RGBA orderings. The green
+                 * has to dominate rather than merely sit above two dark
+                 * channels: a mid grey has all three equal and around 68,
+                 * which passed a threshold-only test and made a fade to black
+                 * read as a green frame. All-zero YUV renders near 0,76,0, so
+                 * a wide gap to both other channels is the real signature. */
                 tot[0] += px[0]; tot[1] += px[1]; tot[2] += px[2];
-                if (px[1] > 60 && px[0] < 70 && px[2] < 70)
+                if (px[1] > 40 && px[1] > px[0] + 30 && px[1] > px[2] + 30)
                     greenish++;
                 n++;
             }
