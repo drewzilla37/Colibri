@@ -338,7 +338,7 @@ int vlc_LogPreinit(libvlc_int_t *vlc)
     }
 
     /* Announce who we are */
-    msg_Dbg(vlc, "VLC media player - %s", VERSION_MESSAGE);
+    msg_Dbg(vlc, "Colibri - %s", VERSION_MESSAGE);
     msg_Dbg(vlc, "%s", COPYRIGHT_MESSAGE);
     msg_Dbg(vlc, "revision %s", psz_vlc_changeset);
     msg_Dbg(vlc, "configured with %s", CONFIGURE_LINE);
@@ -413,7 +413,7 @@ void vlc_LogSet(libvlc_int_t *vlc, vlc_log_cb cb, void *opaque)
         vlc_module_unload(vlc, module, vlc_logger_unload, sys);
 
     /* Announce who we are */
-    msg_Dbg (vlc, "VLC media player - %s", VERSION_MESSAGE);
+    msg_Dbg (vlc, "Colibri - %s", VERSION_MESSAGE);
     msg_Dbg (vlc, "%s", COPYRIGHT_MESSAGE);
     msg_Dbg (vlc, "revision %s", psz_vlc_changeset);
     msg_Dbg (vlc, "configured with %s", CONFIGURE_LINE);

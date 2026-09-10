@@ -97,8 +97,8 @@ AboutDialog::AboutDialog( intf_thread_t *_p_intf)
     }
 
     ui.version->setText(qfu( " " VERSION_MESSAGE ) );
-    ui.title->setText("<html><head/><body><p><span style=\" font-size:26pt;\"> " + qtr( "VLC media player" ) + " </span></p></body></html>");
-    QString translatedString = qtr( "<p>VLC media player is a free and open source media player, encoder, and streamer made by the volunteers of the <a href=\"http://www.videolan.org/\"><span style=\" text-decoration: underline; color:#0057ae;\">VideoLAN</span></a> community.</p><p>VLC uses its internal codecs, works on essentially every popular platform, and can read almost all files, CDs, DVDs, network streams, capture cards and other media formats!</p><p><a href=\"http://www.videolan.org/contribute/\"><span style=\" text-decoration: underline; color:#0057ae;\">Help and join us!</span></a>" );
+    ui.title->setText("<html><head/><body><p><span style=\" font-size:26pt;\"> " + qtr( "Colibri" ) + " </span></p></body></html>");
+    QString translatedString = qtr( "<p>Colibri is a free and open source media player built for frame-accurate playback. It adds a single-frame step backwards, so you can walk a video in either direction and stop on the exact frame you want.</p><p>Colibri is based on VLC media player, made by the volunteers of the <a href=\"http://www.videolan.org/\"><span style=\" text-decoration: underline; color:#0057ae;\">VideoLAN</span></a> community, and is released under the GNU General Public License. It is not affiliated with or endorsed by VideoLAN.</p><p>Because it builds on VLC, Colibri uses the same internal codecs and can read almost all files, CDs, DVDs, network streams, capture cards and other media formats.</p>" );
     if ( var_InheritBool( p_intf, "qt-dark-palette" ) )
         translatedString.remove(QLatin1String("#0057ae"));
     ui.MainBlabla->setText("<html><head/><body>" + translatedString + "</p></body> </html>");
@@ -230,7 +230,7 @@ UpdateDialog::UpdateDialog( intf_thread_t *_p_intf ) : QVLCFrame( _p_intf )
     ui.updateNotifyButtonBox->addButton( new QPushButton( qtr("&No"), this ),
                                          QDialogButtonBox::RejectRole );
 
-    setWindowTitle( qtr( "VLC media player updates" ) );
+    setWindowTitle( qtr( "Colibri updates" ) );
     setWindowRole( "vlc-update" );
 
     BUTTONACT( recheckButton, UpdateOrDownload );
@@ -327,7 +327,7 @@ void UpdateDialog::updateNotify( bool b_result )
         {
             ui.stackedWidget->setCurrentWidget( ui.updateDialogPage );
             ui.updateDialogLabel->setText(
-                    qtr( "You have the latest version of VLC media player." ) );
+                    qtr( "You have the latest version of Colibri." ) );
         }
     }
     else

@@ -1173,17 +1173,17 @@ void VLCMenuBar::updateSystrayMenu( MainInterface *mi,
     sysMenu->clear();
 
 #ifndef Q_OS_MAC
-    /* Hide / Show VLC and cone */
+    /* Hide / Show the main window */
     if( mi->isVisible() || b_force_visible )
     {
         sysMenu->addAction( QIcon( ":/logo/vlc16.png" ),
-                            qtr( "&Hide VLC media player in taskbar" ), mi,
+                            qtr( "&Hide Colibri in taskbar" ), mi,
                             SLOT( hideUpdateSystrayMenu() ) );
     }
     else
     {
         sysMenu->addAction( QIcon( ":/logo/vlc16.png" ),
-                            qtr( "Sho&w VLC media player" ), mi,
+                            qtr( "Sho&w Colibri" ), mi,
                             SLOT( showUpdateSystrayMenu() ) );
     }
     sysMenu->addSeparator();
