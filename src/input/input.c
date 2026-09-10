@@ -2412,9 +2412,20 @@ static bool Control( input_thread_t *p_input,
                 if( es_out_VideoHistoryStepForward( input_priv(p_input)->p_es_out,
                                                      &i_history_date ) )
                 {
-                    /* Already at the live edge: fall back to a real step. */
+                    /* Already at the live edge, so the frame being asked
+                     * for does not exist yet. Ask the decoder for it and
+                     * return: it is displayed by the decoder thread as soon as
+                     * it exists, in DecoderPlayVideo().
+                     *
+                     * Waiting for it here is not an option even though it
+                     * would be simpler. This is the input thread, and the
+                     * input thread is what reads the demuxer and feeds the
+                     * decoder, so sleeping on a decode here starves the decode
+                     * being waited for. Doing that stalled stepping outright
+                     * once the decoder had chewed through the blocks it
+                     * already held. */
                     input_priv(p_input)->b_next_frame = true;
-                    es_out_SetFrameNext( input_priv(p_input)->p_es_out, NULL );
+                    es_out_VideoRequestFrame( input_priv(p_input)->p_es_out );
                 }
                 else
                 {

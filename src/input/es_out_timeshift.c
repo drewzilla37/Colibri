@@ -730,6 +730,7 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
     case ES_OUT_VIDEO_HISTORY_STEP_FORWARD:
     case ES_OUT_VIDEO_HISTORY_IS_ACTIVE:
     case ES_OUT_VIDEO_HISTORY_RESET:
+    case ES_OUT_VIDEO_REQUEST_FRAME:
         return es_out_vaControl( p_sys->p_out, i_query, args );
 
     case ES_OUT_MODIFY_PCR_SYSTEM:

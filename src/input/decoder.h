@@ -85,6 +85,10 @@ void input_DecoderGetCcDesc( decoder_t *, decoder_cc_desc_t * );
  */
 void input_DecoderFrameNext( decoder_t *p_dec, vlc_tick_t *pi_duration );
 
+/* Ask the decoder for one more frame without displaying anything. Used by
+ * frame stepping, which shows the frame itself once it reaches the history. */
+void input_DecoderRequestFrame( decoder_t *p_dec );
+
 /**
  * Displays the buffered frame immediately before the one currently on
  * screen - no seek, no re-decode. The reference point is what the vout is

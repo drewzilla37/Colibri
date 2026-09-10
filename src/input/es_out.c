@@ -2892,6 +2892,17 @@ static int EsOutControlLocked( es_out_t *out, int i_query, va_list args )
         return VLC_SUCCESS;
     }
 
+    case ES_OUT_VIDEO_REQUEST_FRAME:
+    {
+        es_out_id_t *p_video_es = EsOutFindMasterVideoES( p_sys );
+
+        if( p_video_es == NULL )
+            return VLC_EGENERIC;
+
+        input_DecoderRequestFrame( p_video_es->p_dec );
+        return VLC_SUCCESS;
+    }
+
     case ES_OUT_SET_TIMES:
     {
         double f_position = va_arg( args, double );

@@ -160,6 +160,10 @@ static inline int es_out_VideoHistoryReset( es_out_t *p_out )
 {
     return es_out_Control( p_out, ES_OUT_VIDEO_HISTORY_RESET );
 }
+static inline int es_out_VideoRequestFrame( es_out_t *p_out )
+{
+    return es_out_Control( p_out, ES_OUT_VIDEO_REQUEST_FRAME );
+}
 static inline void es_out_SetTimes( es_out_t *p_out, double f_position, vlc_tick_t i_time, vlc_tick_t i_length )
 {
     int i_ret = es_out_Control( p_out, ES_OUT_SET_TIMES, f_position, i_time, i_length );

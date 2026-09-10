@@ -120,6 +120,7 @@ enum es_out_query_e
      * buffer, e.g. after a seek or other discontinuity. Fails if there
      * is no video track selected. */
     ES_OUT_VIDEO_HISTORY_RESET, /* res=can fail */
+    ES_OUT_VIDEO_REQUEST_FRAME, /* no arg; decode one frame, display nothing; res=can fail */
 
     /* First value usable for private control */
     ES_OUT_PRIVATE_START = 0x10000,

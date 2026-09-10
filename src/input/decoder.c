@@ -1187,6 +1187,9 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
      * picture predates the flush. */
     vlc_fifo_Lock( p_owner->p_fifo );
     bool b_flushing = p_owner->flushing;
+    /* Decoded to satisfy a single frame step rather than by running playback:
+     * see where b_browsing is set below. */
+    bool b_paused_frame = p_owner->paused;
     vlc_fifo_Unlock( p_owner->p_fifo );
 
     if( b_flushing )
@@ -1305,8 +1308,17 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
     p_owner->history.pp_pictures[i_next] = p_copy;
     p_owner->history.p_dates[i_next] = p_picture->date;
     p_owner->history.p_stream_dates[i_next] = i_stream_date;
-    p_owner->history.b_browsing = false;
     p_owner->history.i_head = i_next;
+
+    /* b_browsing says the date the vout reports is one we set exactly rather
+     * than the picture it has prepared a frame ahead of the viewer. Running
+     * playback invalidates it, but a single frame decoded while paused does
+     * not: that frame is stepped onto the screen by itself, so the reported
+     * date still matches what is being looked at. Clearing it here made the
+     * first step back after a forward step at the live edge apply the one
+     * frame correction it no longer needed, and skip a frame. */
+    if( !b_paused_frame )
+        p_owner->history.b_browsing = false;
     if( p_owner->history.i_count < p_owner->history.i_capacity )
         p_owner->history.i_count++;
 
@@ -1385,9 +1397,16 @@ static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
 
     /* FIXME: The *input* FIFO should not be locked here. This will not work
      * properly if/when pictures are queued asynchronously. */
+    /* Whether this picture is the one a frame step asked for, which decides
+     * below whether it has to be put on screen as well as queued. */
+    bool b_stepped = false;
+
     vlc_fifo_Lock( p_owner->p_fifo );
     if( unlikely(p_owner->paused) && likely(p_owner->frames_countdown > 0) )
+    {
         p_owner->frames_countdown--;
+        b_stepped = true;
+    }
     vlc_fifo_Unlock( p_owner->p_fifo );
 
     /* */
@@ -1405,6 +1424,18 @@ static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
         }
         DecoderHistoryPush( p_dec, p_picture, i_stream_date );
         vout_PutPicture( p_vout, p_picture );
+
+        /* A frame decoded to satisfy a step has to be shown as well as queued,
+         * and this is the first moment it exists. The requester cannot do it:
+         * asking is all it can do without blocking the thread that feeds this
+         * one, so by the time it returns there is nothing queued yet and its
+         * step would show nothing. That was every second keypress appearing to
+         * do nothing while the frame waited for the press after it. */
+        if( unlikely(b_stepped) )
+        {
+            vlc_tick_t i_step_duration;
+            vout_NextPicture( p_vout, &i_step_duration );
+        }
     }
     else
     {
@@ -2674,6 +2705,27 @@ void input_DecoderWait( decoder_t *p_dec )
         vlc_cond_wait( &p_owner->wait_acknowledge, &p_owner->lock );
     }
     vlc_mutex_unlock( &p_owner->lock );
+}
+
+/**
+ * Asks the decoder for one more frame and returns, displaying nothing.
+ *
+ * input_DecoderFrameNext() also steps the vout, which is right when a frame is
+ * already queued there but wrong for frame stepping: the frame being asked for
+ * does not exist yet, so that step shows nothing, and whoever displays the
+ * frame when it does arrive would then be the second to try. Requesting
+ * without displaying leaves exactly one path to the screen.
+ */
+void input_DecoderRequestFrame( decoder_t *p_dec )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+
+    assert( p_owner->paused );
+
+    vlc_fifo_Lock( p_owner->p_fifo );
+    p_owner->frames_countdown++;
+    vlc_fifo_Signal( p_owner->p_fifo );
+    vlc_fifo_Unlock( p_owner->p_fifo );
 }
 
 void input_DecoderFrameNext( decoder_t *p_dec, vlc_tick_t *pi_duration )
