@@ -1091,6 +1091,13 @@ static picture_t *DecoderHistoryDownload( decoder_t *p_dec, picture_t *p_picture
             return NULL; /* no known CPU download path for this chroma */
     }
 
+    /* The converters read the GPU surface out of the picture context, and the
+     * first thing they do without one is log "missing source context" and take
+     * the silent early return described in DecoderHistoryIsBlank(). Cheaper to
+     * refuse here than to download a frame we would only throw away. */
+    if( p_picture->context == NULL )
+        return NULL;
+
     if( p_owner->history.p_image == NULL )
     {
         p_owner->history.p_image = image_HandlerCreate( p_dec );
@@ -1103,6 +1110,51 @@ static picture_t *DecoderHistoryDownload( decoder_t *p_dec, picture_t *p_picture
 
     return image_Convert( p_owner->history.p_image, p_picture,
                            &p_picture->format, &fmt_out );
+}
+
+/**
+ * Reports whether a downloaded frame is the all-zero picture a failed GPU
+ * readback leaves behind.
+ *
+ * The D3D11 chroma converters are void functions wrapped by
+ * VIDEO_FILTER_WRAPPER, and every one of their failure paths - a picture with
+ * no context, a staging texture that cannot be created, a Map() that returns
+ * a failure HRESULT because the device is busy - is a bare "return". The
+ * wrapper cannot see that and hands back the destination picture it allocated,
+ * never written to. Fresh pages come from the OS zeroed, and all-zero YUV is
+ * not black but a solid green, so the frame lands in the ring looking like a
+ * green flash that persists until stepping moves past it.
+ *
+ * No encoder produces Y=0 with U=V=0: black is Y=16, or Y=0 with U=V=128 for
+ * full range. An all-zero sample therefore means a failed readback rather than
+ * real content, and such a frame would render as that same green even if it
+ * were genuine, so nothing is lost by refusing it. Sampling a fixed grid keeps
+ * this O(1) per frame against a readback that costs orders of magnitude more.
+ */
+static bool DecoderHistoryIsBlank( const picture_t *p_pic )
+{
+    for( int i = 0; i < p_pic->i_planes; i++ )
+    {
+        const plane_t *p_plane = &p_pic->p[i];
+
+        if( p_plane->i_visible_pitch <= 0 || p_plane->i_visible_lines <= 0 )
+            continue;
+
+        for( int y = 0; y < 8; y++ )
+        {
+            int i_line = (int)( (int64_t)y * p_plane->i_visible_lines / 8 );
+            const uint8_t *p_pixels =
+                &p_plane->p_pixels[ (size_t)i_line * p_plane->i_pitch ];
+
+            for( int x = 0; x < 8; x++ )
+            {
+                int i_col = (int)( (int64_t)x * p_plane->i_visible_pitch / 8 );
+                if( p_pixels[i_col] != 0 )
+                    return false;
+            }
+        }
+    }
+    return true;
 }
 
 static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
@@ -1136,6 +1188,14 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
         p_src = DecoderHistoryDownload( p_dec, p_picture );
         if( p_src == NULL )
             return; /* no CPU converter available for this chroma */
+
+        if( DecoderHistoryIsBlank( p_src ) )
+        {
+            msg_Dbg( p_dec, "frame history: dropping frame with a failed "
+                            "readback" );
+            picture_Release( p_src );
+            return;
+        }
         b_downloaded = true;
     }
 
