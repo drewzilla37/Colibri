@@ -89,7 +89,7 @@ VLCProfileSelector::~VLCProfileSelector()
 #else
             QSettings::NativeFormat,
 #endif
-            QSettings::UserScope, "vlc", "vlc-qt-interface" );
+            QSettings::UserScope, QT_SETTINGS_ORG, QT_SETTINGS_APP );
     ;
     settings.setValue( "codecs-profiles-selected", profileBox->currentText() );
 }
@@ -102,7 +102,7 @@ inline void VLCProfileSelector::fillProfilesCombo()
 #else
             QSettings::NativeFormat,
 #endif
-            QSettings::UserScope, "vlc", "vlc-qt-interface" );
+            QSettings::UserScope, QT_SETTINGS_ORG, QT_SETTINGS_APP );
 
     int i_size = settings.beginReadArray( "codecs-profiles" );
 
@@ -183,7 +183,7 @@ void VLCProfileSelector::saveProfiles()
 #else
             QSettings::NativeFormat,
 #endif
-            QSettings::UserScope, "vlc", "vlc-qt-interface" );
+            QSettings::UserScope, QT_SETTINGS_ORG, QT_SETTINGS_APP );
 
     settings.remove( "codecs-profiles" ); /* Erase old profiles to be rewritten */
     settings.beginWriteArray( "codecs-profiles" );

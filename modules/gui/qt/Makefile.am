@@ -377,12 +377,12 @@ libqt_plugin_la_RES = \
 	gui/qt/pixmaps/prefs/advprefs_playlist.svg \
 	gui/qt/pixmaps/prefs/advprefs_sout.svg \
 	gui/qt/pixmaps/prefs/advprefs_video.svg \
-	gui/qt/pixmaps/prefs/spref_cone_Audio_64.png \
-	gui/qt/pixmaps/prefs/spref_cone_Hotkeys_64.png \
-	gui/qt/pixmaps/prefs/spref_cone_Input_64.png \
-	gui/qt/pixmaps/prefs/spref_cone_Interface_64.png \
-	gui/qt/pixmaps/prefs/spref_cone_Subtitles_64.png \
-	gui/qt/pixmaps/prefs/spref_cone_Video_64.png \
+	gui/qt/pixmaps/prefs/spref_audio_64.png \
+	gui/qt/pixmaps/prefs/spref_hotkeys_64.png \
+	gui/qt/pixmaps/prefs/spref_input_64.png \
+	gui/qt/pixmaps/prefs/spref_interface_64.png \
+	gui/qt/pixmaps/prefs/spref_subtitles_64.png \
+	gui/qt/pixmaps/prefs/spref_video_64.png \
 	gui/qt/pixmaps/previous.svg \
 	gui/qt/pixmaps/profile_new.svg \
 	gui/qt/pixmaps/sample_complete.png \

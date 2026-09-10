@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="244" height="145" viewBox="0 0 244 145">
+  <rect width="244" height="145" fill="#262c33"/>
+
+  <!-- title bar -->
+  <rect width="244" height="16" fill="#1a1f24"/>
+  <rect x="8" y="6" width="4" height="4" rx="2" fill="#2a82da"/>
+  <rect x="16" y="6.5" width="44" height="3" rx="1.5" fill="#8b98a5"/>
+  <g fill="#5c6773">
+    <rect x="214" y="6.5" width="7" height="3" rx="1.5"/>
+    <rect x="224" y="6" width="4" height="4" rx="1"/>
+    <rect x="231" y="6" width="4" height="4" rx="1"/>
+  </g>
+
+  <!-- menu bar -->
+  <rect y="16" width="244" height="12" fill="#20262c"/>
+  <g fill="#77838f">
+    <rect x="8" y="20.5" width="18" height="3" rx="1.5"/>
+    <rect x="32" y="20.5" width="26" height="3" rx="1.5"/>
+    <rect x="64" y="20.5" width="16" height="3" rx="1.5"/>
+    <rect x="86" y="20.5" width="16" height="3" rx="1.5"/>
+    <rect x="108" y="20.5" width="24" height="3" rx="1.5"/>
+    <rect x="138" y="20.5" width="16" height="3" rx="1.5"/>
+  </g>
+
+  <!-- video surface -->
+  <rect y="28" width="244" height="78" fill="#000000"/>
+  <path d="M115 55 l16 9 -16 9 z" fill="#2a82da"/>
+
+  <!-- seek bar -->
+  <rect x="8" y="112" width="228" height="4" rx="2" fill="#3a444e"/>
+  <rect x="8" y="112" width="82" height="4" rx="2" fill="#2a82da"/>
+  <circle cx="90" cy="114" r="4.5" fill="#7fb6ea"/>
+
+  <!-- transport row -->
+  <g fill="#8b98a5">
+    <path d="M12 126 l10 6 -10 6 z"/>
+    <rect x="30" y="126" width="3" height="12" rx="1"/>
+    <rect x="36" y="126" width="3" height="12" rx="1"/>
+    <path d="M48 126 l9 6 -9 6 z"/>
+    <path d="M60 126 l9 6 -9 6 z"/>
+    <rect x="70" y="126" width="3" height="12" rx="1"/>
+    <rect x="84" y="126" width="12" height="12" rx="2"/>
+    <rect x="104" y="126" width="12" height="12" rx="2"/>
+  </g>
+  <!-- previous frame and next frame, the pair this player exists for -->
+  <g fill="#2a82da">
+    <rect x="124" y="126" width="3" height="12" rx="1"/>
+    <path d="M139 126 l-9 6 9 6 z"/>
+    <path d="M147 126 l9 6 -9 6 z"/>
+    <rect x="159" y="126" width="3" height="12" rx="1"/>
+  </g>
+  <!-- volume -->
+  <path d="M186 128 h5 l7 -5 v18 l-7 -5 h-5 z" fill="#8b98a5"/>
+  <rect x="204" y="130.5" width="32" height="3" rx="1.5" fill="#3a444e"/>
+  <rect x="204" y="130.5" width="22" height="3" rx="1.5" fill="#2a82da"/>
+</svg>

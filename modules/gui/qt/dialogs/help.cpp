@@ -89,7 +89,7 @@ AboutDialog::AboutDialog( intf_thread_t *_p_intf)
     if ( var_InheritBool( p_intf, "qt-dark-palette" ) ) {
         ui.horizontalFrame->setStyleSheet("background-color: rgb(10, 10, 10);");
         ui.footer->setStyleSheet("background-color: rgb(25, 25, 25);");
-        linkColor = "#ffa851";
+        linkColor = "#7fb6ea";
     } else {
         ui.horizontalFrame->setStyleSheet("background-color: rgb(230, 230, 230);");
         ui.footer->setStyleSheet("background-color: rgb(245, 245, 245);");

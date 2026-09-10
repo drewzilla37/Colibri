@@ -96,12 +96,12 @@
         <file alias="valid.svg">pixmaps/valid.svg</file>
     </qresource>
     <qresource prefix="/prefsmenu">
-        <file alias="cone_audio_64.png">pixmaps/prefs/spref_cone_Audio_64.png</file>
-        <file alias="cone_hotkeys_64.png">pixmaps/prefs/spref_cone_Hotkeys_64.png</file>
-        <file alias="cone_input_64.png">pixmaps/prefs/spref_cone_Input_64.png</file>
-        <file alias="cone_interface_64.png">pixmaps/prefs/spref_cone_Interface_64.png</file>
-        <file alias="cone_subtitles_64.png">pixmaps/prefs/spref_cone_Subtitles_64.png</file>
-        <file alias="cone_video_64.png">pixmaps/prefs/spref_cone_Video_64.png</file>
+        <file alias="spref_audio_64.png">pixmaps/prefs/spref_audio_64.png</file>
+        <file alias="spref_hotkeys_64.png">pixmaps/prefs/spref_hotkeys_64.png</file>
+        <file alias="spref_input_64.png">pixmaps/prefs/spref_input_64.png</file>
+        <file alias="spref_interface_64.png">pixmaps/prefs/spref_interface_64.png</file>
+        <file alias="spref_subtitles_64.png">pixmaps/prefs/spref_subtitles_64.png</file>
+        <file alias="spref_video_64.png">pixmaps/prefs/spref_video_64.png</file>
         <file alias="sample_complete.png">pixmaps/sample_complete.png</file>
         <file alias="sample_minimal.png">pixmaps/sample_minimal.png</file>
         <file alias="sample_skins.png">pixmaps/sample_skins.png</file>

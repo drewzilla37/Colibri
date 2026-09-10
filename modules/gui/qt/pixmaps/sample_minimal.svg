@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="244" height="145" viewBox="0 0 244 145">
+  <rect width="244" height="145" fill="#000000"/>
+
+  <!-- title bar only -->
+  <rect width="244" height="16" fill="#1a1f24"/>
+  <rect x="8" y="6" width="4" height="4" rx="2" fill="#2a82da"/>
+  <rect x="16" y="6.5" width="44" height="3" rx="1.5" fill="#8b98a5"/>
+  <g fill="#5c6773">
+    <rect x="214" y="6.5" width="7" height="3" rx="1.5"/>
+    <rect x="224" y="6" width="4" height="4" rx="1"/>
+    <rect x="231" y="6" width="4" height="4" rx="1"/>
+  </g>
+
+  <!-- video surface fills the rest -->
+  <path d="M115 63 l16 9 -16 9 z" fill="#2a82da"/>
+</svg>

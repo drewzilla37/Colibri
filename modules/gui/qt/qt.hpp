@@ -157,6 +157,13 @@ template<typename... Args> struct QOverload {
 
 #define getSettings() p_intf->p_sys->mainSettings
 
+/* Organisation and application QSettings stores the interface state under.
+   The organisation must match the leaf of the configuration directory from
+   config_GetUserDir(VLC_CONFIG_DIR), because QSettings appends it to the path
+   the interface hands it. */
+#define QT_SETTINGS_ORG "colibri"
+#define QT_SETTINGS_APP "colibri-qt-interface"
+
 static inline QString QVLCUserDir( vlc_userdir_t type )
 {
     char *dir = config_GetUserDir( type );

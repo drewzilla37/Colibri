@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="122" height="88" viewBox="0 0 122 88">
+  <rect width="122" height="88" fill="#262c33"/>
+
+  <!-- a skin is a free floating shaped panel, so show it that way -->
+  <rect x="6" y="12" width="110" height="64" rx="12" fill="#141a20"/>
+  <rect x="14" y="20" width="94" height="34" rx="4" fill="#000000"/>
+  <path d="M56 31 l11 6 -11 6 z" fill="#2a82da"/>
+
+  <rect x="14" y="59" width="94" height="3" rx="1.5" fill="#3a444e"/>
+  <rect x="14" y="59" width="38" height="3" rx="1.5" fill="#2a82da"/>
+
+  <g fill="#8b98a5">
+    <path d="M16 66 l7 4 -7 4 z"/>
+    <rect x="28" y="66" width="2.5" height="8" rx="1"/>
+    <rect x="33" y="66" width="2.5" height="8" rx="1"/>
+    <path d="M42 66 l6 4 -6 4 z"/>
+  </g>
+  <g fill="#2a82da">
+    <path d="M64 66 l-6 4 6 4 z"/>
+    <path d="M70 66 l6 4 -6 4 z"/>
+  </g>
+  <rect x="86" y="68.5" width="22" height="3" rx="1.5" fill="#3a444e"/>
+  <rect x="86" y="68.5" width="14" height="3" rx="1.5" fill="#2a82da"/>
+</svg>

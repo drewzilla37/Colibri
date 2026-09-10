@@ -260,7 +260,7 @@ vlc_module_begin ()
                 RECENTPLAY_FILTER_TEXT, RECENTPLAY_FILTER_LONGTEXT, false )
     add_integer( "qt-continue", 1, CONTINUE_PLAYBACK_TEXT, CONTINUE_PLAYBACK_TEXT, false )
             change_integer_list(i_continue_list, psz_continue_list_text )
-    add_bool( "qt-dark-palette", false, QT_DARK_TEXT,
+    add_bool( "qt-dark-palette", true, QT_DARK_TEXT,
                   QT_DARK_LONGTEXT, false )
 
 #ifdef UPDATE_CHECK
@@ -400,13 +400,23 @@ void applyDarkPalette() {
     static const QColor gray       (75,75,75);
     static const QColor lightGray  (138, 138, 138);
     static const QColor baseColor  (18, 18, 18);
-    static const QColor linkColor  (255, 168, 81);
+    static const QColor linkColor  (127, 182, 234);
 
-#ifdef Q_OS_WIN
-    QColor accentColor = getWindowsAccentColor();
-#else
     QColor accentColor (42, 130, 218);
-#endif
+
+    // Roles that are the same in every group. Tooltips carry their own
+    // colours and would otherwise keep the system's light background, and the
+    // shading roles are what Fusion draws frame and groupbox borders with.
+    // These come first so the per group overrides below still win.
+    darkPalette.setColor(QPalette::ToolTipBase,     darkColor);
+    darkPalette.setColor(QPalette::ToolTipText,     Qt::white);
+    darkPalette.setColor(QPalette::PlaceholderText, lightGray);
+    darkPalette.setColor(QPalette::BrightText,      accentColor);
+    darkPalette.setColor(QPalette::Light,           QColor(60, 60, 60));
+    darkPalette.setColor(QPalette::Midlight,        QColor(50, 50, 50));
+    darkPalette.setColor(QPalette::Mid,             QColor(45, 45, 45));
+    darkPalette.setColor(QPalette::Dark,            QColor(24, 24, 24));
+    darkPalette.setColor(QPalette::Shadow,          QColor(12, 12, 12));
 
     // Active group (the currently focused window)
     darkPalette.setColor(QPalette::Active, QPalette::Window,          darkColor);
@@ -584,8 +594,12 @@ static void *ThreadPlatform( void *obj, char *platform_name )
     char *cConfigDir = config_GetUserDir( VLC_CONFIG_DIR );
     QString configDir = cConfigDir;
     free( cConfigDir );
-    if( configDir.endsWith( "\\vlc" ) )
-        configDir.chop( 4 ); /* the "\vlc" dir is added again by QSettings */
+    /* QSettings appends the organisation name below, so hand it the parent
+       directory and let it put the leaf back. Derive the leaf from the name
+       QSettings will actually use rather than hard coding its length. */
+    static const QString configLeaf = QStringLiteral( "\\" ) + QT_SETTINGS_ORG;
+    if( configDir.endsWith( configLeaf ) )
+        configDir.chop( configLeaf.length() );
     QSettings::setPath( QSettings::IniFormat, QSettings::UserScope, configDir );
 #endif
 
@@ -595,7 +609,7 @@ static void *ThreadPlatform( void *obj, char *platform_name )
 #else
             QSettings::NativeFormat,
 #endif
-            QSettings::UserScope, "vlc", "vlc-qt-interface" );
+            QSettings::UserScope, QT_SETTINGS_ORG, QT_SETTINGS_APP );
 
     if( QDate::currentDate().dayOfYear() >= QT_XMAS_JOKE_DAY && var_InheritBool( p_intf, "qt-icon-change" ) )
         app.setWindowIcon( QIcon::fromTheme( "vlc-xmas", QIcon( ":/logo/vlc128-xmas.png" ) ) );
@@ -678,11 +692,21 @@ static void *ThreadPlatform( void *obj, char *platform_name )
 
     /* Loads and tries to apply the preferred QStyle */
     QString s_style = getSettings()->value( "MainWindow/QtStyle", "" ).toString();
-    if (!s_style.isEmpty())
+    const bool b_dark = isDarkPaletteEnabled( p_intf );
+
+    if( !s_style.isEmpty() )
         QApplication::setStyle( s_style );
+    else if( b_dark )
+        /* The native platform styles draw buttons, combo boxes and the menu
+           bar from the system theme and ignore the application palette, so a
+           dark palette on top of one leaves light controls carrying the
+           palette's light text: unreadable. Fusion honours the palette for
+           every control, which is why ticking the dark palette box at runtime
+           also switches to it. Do the same on startup. */
+        QApplication::setStyle( QStringLiteral("Fusion") );
 
     // Apply dark palette only if dark palette is enabled
-    if (isDarkPaletteEnabled(p_intf))
+    if( b_dark )
         applyDarkPalette();
 
     /* Launch */

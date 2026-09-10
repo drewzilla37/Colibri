@@ -246,17 +246,17 @@ SPrefsCatList::SPrefsCatList( intf_thread_t *_p_intf, QWidget *_parent ) :
     layout->addWidget( button );
 
     ADD_CATEGORY( SPrefsInterface, qtr("Interface"), qtr("Interface Settings"),
-                  cone_interface_64, 0 );
+                  spref_interface_64, 0 );
     ADD_CATEGORY( SPrefsAudio, qtr("Audio"), qtr("Audio Settings"),
-                  cone_audio_64, 1 );
+                  spref_audio_64, 1 );
     ADD_CATEGORY( SPrefsVideo, qtr("Video"), qtr("Video Settings"),
-                  cone_video_64, 2 );
+                  spref_video_64, 2 );
     ADD_CATEGORY( SPrefsSubtitles, qtr(SUBPIC_TITLE), qtr("Subtitle & On Screen Display Settings"),
-                  cone_subtitles_64, 3 );
+                  spref_subtitles_64, 3 );
     ADD_CATEGORY( SPrefsInputAndCodecs, qtr(INPUT_TITLE), qtr("Input & Codecs Settings"),
-                  cone_input_64, 4 );
+                  spref_input_64, 4 );
     ADD_CATEGORY( SPrefsHotkeys, qtr("Hotkeys"), qtr("Configure Hotkeys"),
-                  cone_hotkeys_64, 5 );
+                  spref_hotkeys_64, 5 );
 
 #undef ADD_CATEGORY
 
