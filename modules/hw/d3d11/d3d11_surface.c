@@ -717,18 +717,51 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     D3D11_BOX copyBox = {
         .right = dst->format.i_width, .bottom = dst->format.i_height, .back = 1,
     };
-    /* Which slice of the shared texture array this frame lands in. Worth
-     * having: a stepped frame that arrives blank has so far always been one
-     * written into a slice the decoder was still using, and the slice number
-     * is the only way to tell that from the outside. */
-    msg_Dbg(p_filter, "upload to slice %u", (unsigned)p_sys->slice_index);
-
     ID3D11DeviceContext_CopySubresourceRegion(p_sys->context,
                                               p_sys->resource[KNOWN_DXGI_INDEX],
                                               p_sys->slice_index,
                                               0, 0, 0,
                                               sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX], 0,
                                               &copyBox);
+
+    /* Submit the copy rather than leaving it sitting in the context's command
+     * buffer. The display may be running on a different D3D11 device, in
+     * which case it reaches this surface through a shared handle (see the
+     * sys->d3d_dev.d3dcontext != p_sys->context path in direct3d11.c) and its
+     * own device cannot see a write that has not been submitted yet. It then
+     * draws whatever the surface held before, which is blank the first time
+     * around and stale afterwards. Queueing more work makes it worse, which
+     * is why holding the key down turned nearly every frame green while
+     * tapping slowly only spoiled some of them. */
+    ID3D11DeviceContext_Flush(p_sys->context);
+
+    /* Submitting is not enough on its own: the caller hands this picture
+     * straight to the display, which may read the surface before the copy has
+     * retired. Wait for it. This costs a stall, but the only caller that
+     * reaches here per keypress is frame stepping, where the frame is being
+     * looked at rather than played. */
+    ID3D11Device *d3ddev = NULL;
+    ID3D11DeviceContext_GetDevice(p_sys->context, &d3ddev);
+    if (d3ddev != NULL)
+    {
+        D3D11_QUERY_DESC qdesc = { .Query = D3D11_QUERY_EVENT, .MiscFlags = 0 };
+        ID3D11Query *query = NULL;
+        if (SUCCEEDED(ID3D11Device_CreateQuery(d3ddev, &qdesc, &query)) && query != NULL)
+        {
+            ID3D11DeviceContext_End(p_sys->context, (ID3D11Asynchronous*)query);
+            for (int i = 0; i < 10000; i++)
+            {
+                BOOL done = FALSE;
+                HRESULT qhr = ID3D11DeviceContext_GetData(p_sys->context,
+                                  (ID3D11Asynchronous*)query, &done, sizeof(done), 0);
+                if (FAILED(qhr) || (qhr == S_OK && done))
+                    break;
+                SleepEx(0, FALSE);
+            }
+            ID3D11Query_Release(query);
+        }
+        ID3D11Device_Release(d3ddev);
+    }
 
     d3d11_device_unlock(&sys->d3d_dev);
 
@@ -748,6 +781,8 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
         dst->context = NULL;
     }
 
+    bool b_replaced = (dst->context == NULL && pic_ctx != NULL);
+
     if (dst->context == NULL)
     {
         pic_ctx = calloc(1, sizeof(*pic_ctx));
@@ -760,6 +795,8 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
             dst->context = &pic_ctx->s;
         }
     }
+
+    (void)b_replaced;
 }
 
 D3D11_FILTER_WRAPPER (D3D11_NV12)
