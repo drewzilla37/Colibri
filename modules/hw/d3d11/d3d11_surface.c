@@ -717,6 +717,46 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     D3D11_BOX copyBox = {
         .right = dst->format.i_width, .bottom = dst->format.i_height, .back = 1,
     };
+    /* The display samples the picture through its shader resource views, and a
+     * picture drawn without them produces an empty quad, which reaches the
+     * screen as a solid green frame. Pictures taken from the pool do not all
+     * have them: the decoder owns the texture array and builds views only for
+     * the surfaces it hands out itself, so a slice it never used arrives with
+     * none. direct3d11.c assumes they exist and only checks it in a debug
+     * build, where the assert reads "do it preferrably when creating the
+     * texture". Build them here, once per picture, rather than draw nothing. */
+    if (p_sys->resourceView[KNOWN_DXGI_INDEX] == NULL)
+    {
+        D3D11_TEXTURE2D_DESC dstDesc;
+        ID3D11Texture2D_GetDesc(p_sys->texture[KNOWN_DXGI_INDEX], &dstDesc);
+
+        if (dstDesc.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+        {
+            const d3d_format_t *srvFmt =
+                FindD3D11Format(p_filter, &sys->d3d_dev,
+                                DxgiFormatFourcc(dstDesc.Format),
+                                false, 0, 0, 0, true,
+                                D3D11_FORMAT_SUPPORT_SHADER_LOAD);
+            ID3D11Device *srvDev = NULL;
+            ID3D11DeviceContext_GetDevice(p_sys->context, &srvDev);
+
+            if (srvFmt != NULL && srvDev != NULL &&
+                D3D11_AllocateShaderView(p_filter, srvDev, srvFmt,
+                                         p_sys->texture, p_sys->slice_index,
+                                         p_sys->resourceView) != VLC_SUCCESS)
+                msg_Warn(p_filter, "could not build shader views for slice %u",
+                         (unsigned)p_sys->slice_index);
+            else
+                msg_Dbg(p_filter, "built shader views for slice %u",
+                        (unsigned)p_sys->slice_index);
+
+            if (srvDev != NULL)
+                ID3D11Device_Release(srvDev);
+        }
+    }
+
+    msg_Dbg(p_filter, "upload to slice %u", (unsigned)p_sys->slice_index);
+
     ID3D11DeviceContext_CopySubresourceRegion(p_sys->context,
                                               p_sys->resource[KNOWN_DXGI_INDEX],
                                               p_sys->slice_index,

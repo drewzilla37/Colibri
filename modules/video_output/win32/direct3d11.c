@@ -1310,13 +1310,112 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         d3d11_device_unlock( &sys->d3d_dev );
 }
 
+/**
+ * Debug aid: samples what was actually rendered, just before it is presented.
+ *
+ * Every other way of checking a frame in this pipeline inspects what we believe
+ * was written rather than what the viewer sees, and reading a surface back to
+ * check it waits for work the display does not wait for, which hides the very
+ * problem being looked for. Sampling the back buffer here sits downstream of
+ * all of that. All-zero YUV reaches the screen as a solid green, so a frame
+ * that failed to arrive is recognisable by its colour.
+ *
+ * Off unless COLIBRI_FRAMECHECK is set: it stalls on a readback per frame.
+ */
+static void FrameCheck(vout_display_t *vd, picture_t *picture)
+{
+    vout_display_sys_t *sys = vd->sys;
+    const UINT SAMPLE = 32;
+
+    ID3D11Texture2D *backbuf = NULL;
+    if (FAILED(IDXGISwapChain_GetBuffer(sys->dxgiswapChain, 0,
+                                        &IID_ID3D11Texture2D, (LPVOID *)&backbuf)))
+        return;
+
+    D3D11_TEXTURE2D_DESC bbDesc;
+    ID3D11Texture2D_GetDesc(backbuf, &bbDesc);
+
+    D3D11_TEXTURE2D_DESC sDesc;
+    memset(&sDesc, 0, sizeof(sDesc));
+    sDesc.Width = SAMPLE;
+    sDesc.Height = SAMPLE;
+    sDesc.MipLevels = 1;
+    sDesc.ArraySize = 1;
+    sDesc.Format = bbDesc.Format;
+    sDesc.SampleDesc.Count = 1;
+    sDesc.Usage = D3D11_USAGE_STAGING;
+    sDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+    ID3D11Texture2D *staging = NULL;
+    if (FAILED(ID3D11Device_CreateTexture2D(sys->d3d_dev.d3ddevice, &sDesc, NULL, &staging)))
+    {
+        ID3D11Texture2D_Release(backbuf);
+        return;
+    }
+
+    /* the middle of the window, where the video is regardless of letterboxing */
+    UINT cx = bbDesc.Width  > SAMPLE ? (bbDesc.Width  - SAMPLE) / 2 : 0;
+    UINT cy = bbDesc.Height > SAMPLE ? (bbDesc.Height - SAMPLE) / 2 : 0;
+    D3D11_BOX box;
+    box.left = cx; box.right = cx + SAMPLE;
+    box.top = cy;  box.bottom = cy + SAMPLE;
+    box.front = 0; box.back = 1;
+
+    ID3D11DeviceContext_CopySubresourceRegion(sys->d3d_dev.d3dcontext,
+                                              (ID3D11Resource *)staging, 0, 0, 0, 0,
+                                              (ID3D11Resource *)backbuf, 0, &box);
+
+    D3D11_MAPPED_SUBRESOURCE map;
+    if (SUCCEEDED(ID3D11DeviceContext_Map(sys->d3d_dev.d3dcontext,
+                                          (ID3D11Resource *)staging, 0,
+                                          D3D11_MAP_READ, 0, &map)))
+    {
+        unsigned long tot[3] = { 0, 0, 0 };
+        unsigned n = 0, greenish = 0;
+
+        for (UINT y = 0; y < SAMPLE; y++)
+        {
+            const uint8_t *row = (const uint8_t *)map.pData + (size_t)y * map.RowPitch;
+            for (UINT x = 0; x < SAMPLE; x++)
+            {
+                const uint8_t *px = row + (size_t)x * 4;
+                /* index 1 is green in both BGRA and RGBA orderings; the other
+                 * two are the ones that must be dark for this to read green */
+                tot[0] += px[0]; tot[1] += px[1]; tot[2] += px[2];
+                if (px[1] > 60 && px[0] < 70 && px[2] < 70)
+                    greenish++;
+                n++;
+            }
+        }
+        ID3D11DeviceContext_Unmap(sys->d3d_dev.d3dcontext, (ID3D11Resource *)staging, 0);
+
+        if (n > 0)
+        {
+            unsigned pct = greenish * 100 / n;
+            msg_Warn(vd, "FRAMECHECK date=%" PRId64 " avg=%lu,%lu,%lu green=%u%% %s",
+                     picture ? picture->date : (vlc_tick_t)0,
+                     tot[0] / n, tot[1] / n, tot[2] / n, pct,
+                     pct >= 90 ? "GREEN" : "ok");
+        }
+    }
+
+    ID3D11Texture2D_Release(staging);
+    ID3D11Texture2D_Release(backbuf);
+}
+
 static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpicture)
 {
     vout_display_sys_t *sys = vd->sys;
+    static int framecheck = -1;
+
+    if (unlikely(framecheck < 0))
+        framecheck = getenv("COLIBRI_FRAMECHECK") != NULL;
 
     DXGI_PRESENT_PARAMETERS presentParams;
     memset(&presentParams, 0, sizeof(presentParams));
     d3d11_device_lock( &sys->d3d_dev );
+    if (unlikely(framecheck))
+        FrameCheck(vd, picture);
     HRESULT hr = IDXGISwapChain1_Present1(sys->dxgiswapChain, 0, 0, &presentParams);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
     {
