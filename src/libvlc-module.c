@@ -1877,7 +1877,7 @@ vlc_module_begin ()
                  CACHING_TEXT, CACHING_LONGTEXT, true )
         change_integer_range( 0, 60000 )
         change_safe()
-    add_integer( "frame-history-mb", 256,
+    add_integer( "frame-history-mb", 1024,
                  FRAME_HISTORY_TEXT, FRAME_HISTORY_LONGTEXT, true )
         change_integer_range( 0, 8192 )
     add_obsolete_integer( "vdr-caching" ) /* 2.0.0 */

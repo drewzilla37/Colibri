@@ -717,6 +717,12 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     D3D11_BOX copyBox = {
         .right = dst->format.i_width, .bottom = dst->format.i_height, .back = 1,
     };
+    /* Which slice of the shared texture array this frame lands in. Worth
+     * having: a stepped frame that arrives blank has so far always been one
+     * written into a slice the decoder was still using, and the slice number
+     * is the only way to tell that from the outside. */
+    msg_Dbg(p_filter, "upload to slice %u", (unsigned)p_sys->slice_index);
+
     ID3D11DeviceContext_CopySubresourceRegion(p_sys->context,
                                               p_sys->resource[KNOWN_DXGI_INDEX],
                                               p_sys->slice_index,
