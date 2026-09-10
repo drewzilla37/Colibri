@@ -77,7 +77,39 @@ struct filter_sys_t {
     picture_t  *staging_pic;
 
     d3d11_handle_t  hd3d;
+
+    /* Set by a conversion that bailed out before writing the destination.
+     * The conversions are void and every failure is a bare return, so
+     * without this the wrapper below cannot tell success from a destination
+     * left exactly as it was allocated, which reaches the screen as a solid
+     * green frame. Written and read on the filter's own thread. */
+    bool            b_conversion_failed;
 };
+
+/* Same as VIDEO_FILTER_WRAPPER() but drops the output picture when the
+ * conversion reported failure, so callers get NULL rather than a picture
+ * that was never written. */
+#define D3D11_FILTER_WRAPPER( name )                                        \
+    static picture_t *name ## _Filter( filter_t *p_filter,                  \
+                                       picture_t *p_pic )                   \
+    {                                                                       \
+        picture_t *p_outpic = filter_NewPicture( p_filter );                \
+        if( p_outpic )                                                      \
+        {                                                                   \
+            filter_sys_t *p_sys = (filter_sys_t *)p_filter->p_sys;          \
+            p_sys->b_conversion_failed = false;                             \
+            name( p_filter, p_pic, p_outpic );                              \
+            if( unlikely(p_sys->b_conversion_failed) )                      \
+            {                                                               \
+                picture_Release( p_outpic );                                \
+                p_outpic = NULL;                                            \
+            }                                                               \
+            else                                                            \
+                picture_CopyProperties( p_outpic, p_pic );                  \
+        }                                                                   \
+        picture_Release( p_pic );                                           \
+        return p_outpic;                                                    \
+    }
 
 #if CAN_PROCESSOR
 static int SetupProcessor(filter_t *p_filter, ID3D11Device *d3ddevice,
@@ -278,14 +310,16 @@ ok:
 
 static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
 {
+    filter_sys_t *sys = (filter_sys_t*) p_filter->p_sys;
+
     if (src->context == NULL)
     {
         /* the previous stages creating a D3D11 picture should always fill the context */
         msg_Err(p_filter, "missing source context");
+        sys->b_conversion_failed = true;
         return;
     }
 
-    filter_sys_t *sys = (filter_sys_t*) p_filter->p_sys;
     picture_sys_t *p_sys = &((struct va_pic_context*)src->context)->picsys;
 
     D3D11_TEXTURE2D_DESC desc;
@@ -295,6 +329,7 @@ static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
     if (assert_staging(p_filter, p_sys) != VLC_SUCCESS)
     {
         vlc_mutex_unlock(&sys->staging_lock);
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -332,6 +367,7 @@ static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
 #ifndef NDEBUG
                 msg_Dbg(p_filter,"Failed to create processor input for slice %d. (hr=0x%lX)", p_sys->slice_index, hr);
 #endif
+                sys->b_conversion_failed = true;
                 return;
             }
         }
@@ -347,6 +383,7 @@ static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
         {
             msg_Err(p_filter, "Failed to process the video. (hr=0x%lX)", hr);
             vlc_mutex_unlock(&sys->staging_lock);
+            sys->b_conversion_failed = true;
             return;
         }
 
@@ -365,6 +402,7 @@ static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
     if (FAILED(hr)) {
         msg_Err(p_filter, "Failed to map source surface. (hr=0x%lX)", hr);
         vlc_mutex_unlock(&sys->staging_lock);
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -431,14 +469,16 @@ static void D3D11_YUY2(filter_t *p_filter, picture_t *src, picture_t *dst)
 
 static void D3D11_NV12(filter_t *p_filter, picture_t *src, picture_t *dst)
 {
+    filter_sys_t *sys = (filter_sys_t*) p_filter->p_sys;
+
     if (src->context == NULL)
     {
         /* the previous stages creating a D3D11 picture should always fill the context */
         msg_Err(p_filter, "missing source context");
+        sys->b_conversion_failed = true;
         return;
     }
 
-    filter_sys_t *sys = (filter_sys_t*) p_filter->p_sys;
     picture_sys_t *p_sys = &((struct va_pic_context*)src->context)->picsys;
 
     D3D11_TEXTURE2D_DESC desc;
@@ -448,6 +488,7 @@ static void D3D11_NV12(filter_t *p_filter, picture_t *src, picture_t *dst)
     if (assert_staging(p_filter, p_sys) != VLC_SUCCESS)
     {
         vlc_mutex_unlock(&sys->staging_lock);
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -485,6 +526,7 @@ static void D3D11_NV12(filter_t *p_filter, picture_t *src, picture_t *dst)
 #ifndef NDEBUG
                 msg_Dbg(p_filter,"Failed to create processor input for slice %d. (hr=0x%lX)", p_sys->slice_index, hr);
 #endif
+                sys->b_conversion_failed = true;
                 return;
             }
         }
@@ -500,6 +542,7 @@ static void D3D11_NV12(filter_t *p_filter, picture_t *src, picture_t *dst)
         {
             msg_Err(p_filter, "Failed to process the video. (hr=0x%lX)", hr);
             vlc_mutex_unlock(&sys->staging_lock);
+            sys->b_conversion_failed = true;
             return;
         }
 
@@ -518,6 +561,7 @@ static void D3D11_NV12(filter_t *p_filter, picture_t *src, picture_t *dst)
     if (FAILED(hr)) {
         msg_Err(p_filter, "Failed to map source surface. (hr=0x%lX)", hr);
         vlc_mutex_unlock(&sys->staging_lock);
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -625,6 +669,7 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     {
         /* the output filter configuration may have changed since the filter
          * was opened */
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -636,6 +681,7 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
                                          0, D3D11_MAP_WRITE, 0, &lock);
     if (FAILED(hr)) {
         msg_Err(p_filter, "Failed to map source surface. (hr=0x%lX)", hr);
+        sys->b_conversion_failed = true;
         return;
     }
 
@@ -669,9 +715,9 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     }
 }
 
-VIDEO_FILTER_WRAPPER (D3D11_NV12)
-VIDEO_FILTER_WRAPPER (D3D11_YUY2)
-VIDEO_FILTER_WRAPPER (NV12_D3D11)
+D3D11_FILTER_WRAPPER (D3D11_NV12)
+D3D11_FILTER_WRAPPER (D3D11_YUY2)
+D3D11_FILTER_WRAPPER (NV12_D3D11)
 
 int D3D11OpenConverter( vlc_object_t *obj )
 {
