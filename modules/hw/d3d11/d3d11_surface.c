@@ -732,9 +732,25 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
 
     d3d11_device_unlock(&sys->d3d_dev);
 
+    /* The copy above wrote the slice named by dst->p_sys, but the display
+     * picks the surface to draw with ActivePictureSys(), which prefers the
+     * picture's context over its p_sys. Pool pictures are recycled, so one can
+     * arrive still carrying the context from its previous life, naming a
+     * different slice; the display would then draw a surface this conversion
+     * never touched. Drop a context that disagrees so a correct one is built
+     * below. */
+    struct va_pic_context *pic_ctx = (struct va_pic_context *)dst->context;
+    if (pic_ctx != NULL &&
+        (pic_ctx->picsys.resource[KNOWN_DXGI_INDEX] != p_sys->resource[KNOWN_DXGI_INDEX] ||
+         pic_ctx->picsys.slice_index != p_sys->slice_index))
+    {
+        dst->context->destroy(dst->context);
+        dst->context = NULL;
+    }
+
     if (dst->context == NULL)
     {
-        struct va_pic_context *pic_ctx = calloc(1, sizeof(*pic_ctx));
+        pic_ctx = calloc(1, sizeof(*pic_ctx));
         if (likely(pic_ctx))
         {
             pic_ctx->s.destroy = d3d11_pic_context_destroy;
