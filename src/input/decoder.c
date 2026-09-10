@@ -187,6 +187,12 @@ struct decoder_owner_sys_t
         /* vout the cached converter was built against, so it is rebuilt if
          * the decoder is handed a different one. Compared only, never held. */
         vout_thread_t *p_upload_vout;
+
+        /* True while the screen is showing a buffered frame we put there,
+         * which means the date the vout reports back is one we set exactly.
+         * False after any freshly decoded frame, when that date instead
+         * refers to the picture the vout has prepared, one ahead of view. */
+        bool b_browsing;
     } history;
 };
 
@@ -1201,6 +1207,7 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
     p_owner->history.pp_pictures[i_next] = p_copy;
     p_owner->history.p_dates[i_next] = p_picture->date;
     p_owner->history.p_stream_dates[i_next] = i_stream_date;
+    p_owner->history.b_browsing = false;
     p_owner->history.i_head = i_next;
     if( p_owner->history.i_count < p_owner->history.i_capacity )
         p_owner->history.i_count++;
@@ -1949,6 +1956,7 @@ static decoder_t * CreateDecoder( vlc_object_t *p_parent,
     p_owner->history.p_image = NULL;
     p_owner->history.p_upload = NULL;
     p_owner->history.p_upload_vout = NULL;
+    p_owner->history.b_browsing = false;
 
     /* Set buffers allocation callbacks for the decoders */
     p_dec->pf_aout_format_update = aout_update_format;
@@ -2771,6 +2779,29 @@ static int DecoderHistoryGetDisplayedDate( vout_thread_t *p_vout,
  * which frame is chosen. Every press re-derives its own starting point from
  * what is actually on screen, so an individual mis-step cannot accumulate.
  */
+/* Index of the buffered frame nearest i_ref in time, on the requested side,
+ * or -1. Caller holds history.lock. */
+static int DecoderHistoryFind( decoder_owner_sys_t *p_owner, vlc_tick_t i_ref,
+                                bool b_backwards )
+{
+    int i_best = -1;
+    for( int i = 0; i < p_owner->history.i_capacity; i++ )
+    {
+        if( p_owner->history.pp_pictures[i] == NULL )
+            continue;
+
+        vlc_tick_t i_date = p_owner->history.p_dates[i];
+        if( b_backwards ? i_date >= i_ref : i_date <= i_ref )
+            continue;
+
+        if( i_best == -1
+         || ( b_backwards ? i_date > p_owner->history.p_dates[i_best]
+                          : i_date < p_owner->history.p_dates[i_best] ) )
+            i_best = i;
+    }
+    return i_best;
+}
+
 static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
                                 vlc_tick_t *pi_stream_date )
 {
@@ -2792,20 +2823,20 @@ static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
 
     vlc_mutex_lock( &p_owner->history.lock );
 
-    int i_best = -1;
-    for( int i = 0; i < p_owner->history.i_capacity; i++ )
+    int i_best = DecoderHistoryFind( p_owner, i_ref, b_backwards );
+
+    /* While playing, the vout reports the picture it has prepared, which is
+     * one frame ahead of what the viewer is actually looking at. So the first
+     * step after leaving playback has to go one further, or it selects the
+     * frame already on screen and looks like it did nothing. Once we are
+     * browsing, the reference is a date we set ourselves by displaying, so it
+     * is exact and no correction applies. */
+    if( b_backwards && !p_owner->history.b_browsing && i_best != -1 )
     {
-        if( p_owner->history.pp_pictures[i] == NULL )
-            continue;
-
-        vlc_tick_t i_date = p_owner->history.p_dates[i];
-        if( b_backwards ? i_date >= i_ref : i_date <= i_ref )
-            continue;
-
-        if( i_best == -1
-         || ( b_backwards ? i_date > p_owner->history.p_dates[i_best]
-                          : i_date < p_owner->history.p_dates[i_best] ) )
-            i_best = i;
+        int i_prev = DecoderHistoryFind( p_owner,
+                                         p_owner->history.p_dates[i_best], true );
+        if( i_prev != -1 )
+            i_best = i_prev;
     }
 
     if( i_best == -1 )
@@ -2829,6 +2860,12 @@ static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
     i_ret = DecoderHistoryDisplay( p_dec, p_buffered, i_date );
     picture_Release( p_buffered );
 
+    if( i_ret == VLC_SUCCESS )
+    {
+        vlc_mutex_lock( &p_owner->history.lock );
+        p_owner->history.b_browsing = true;
+        vlc_mutex_unlock( &p_owner->history.lock );
+    }
     if( i_ret == VLC_SUCCESS )
         *pi_stream_date = i_stream_date;
 

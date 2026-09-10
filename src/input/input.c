@@ -1805,18 +1805,22 @@ static void ControlUnpause( input_thread_t *p_input, vlc_tick_t i_control_date )
     input_ChangeState( p_input, PLAYING_S );
     es_out_SetPauseState( input_priv(p_input)->p_es_out, false, false, i_control_date );
 
-    bool b_history_active;
-    if( !es_out_VideoHistoryIsActive( input_priv(p_input)->p_es_out, &b_history_active )
-     && b_history_active )
+    /* Resync only if the frame history was actually browsed, which is what
+     * sets i_history_view_date. Asking the decoder whether history is
+     * "active" is not a usable test: while paused it has always decoded
+     * beyond the frame on screen, so it answers yes even when nothing was
+     * stepped, and resuming would then seek to an unset date and restart
+     * the file from the beginning.
+     *
+     * When it has been browsed, the demux and decode pipeline never moved -
+     * only the display did - so seek it to the frame on screen before
+     * resuming. That seek also clears the history (see EsOutChangePosition),
+     * which is the wanted end state. */
+    if( input_priv(p_input)->i_history_view_date > VLC_TICK_INVALID )
     {
-        /* The real demux/decode pipeline never moved while we were
-         * stepping through the reverse-frame history - only the display
-         * did. Resync it to what's actually on screen before resuming,
-         * otherwise playback would jump forward to the stale live
-         * position instead of continuing from the displayed frame. This
-         * seek also resets the history buffer (see EsOutChangePosition),
-         * which is the desired end state: offset back to 0. */
         vlc_value_t val = { .i_int = input_priv(p_input)->i_history_view_date };
+        input_priv(p_input)->i_history_view_date = VLC_TICK_INVALID;
+        input_priv(p_input)->b_next_frame = false;
         Control( p_input, INPUT_CONTROL_SET_TIME, val );
     }
     else if( input_priv(p_input)->b_next_frame )
@@ -2031,6 +2035,9 @@ static bool Control( input_thread_t *p_input,
     {
         case INPUT_CONTROL_SET_POSITION:
         {
+            /* Any real seek abandons whatever frame was being browsed. */
+            input_priv(p_input)->i_history_view_date = VLC_TICK_INVALID;
+
             if( input_priv(p_input)->b_recording )
             {
                 msg_Err( p_input, "INPUT_CONTROL_SET_POSITION ignored while recording" );
@@ -2065,6 +2072,11 @@ static bool Control( input_thread_t *p_input,
         {
             int64_t i_time;
             int i_ret;
+
+            /* Any real seek abandons whatever frame was being browsed. The
+             * resume path clears this before calling in, so it is already
+             * zero when the seek is our own. */
+            input_priv(p_input)->i_history_view_date = VLC_TICK_INVALID;
 
             if( input_priv(p_input)->b_recording )
             {
@@ -2421,7 +2433,21 @@ static bool Control( input_thread_t *p_input,
             break;
 
         case INPUT_CONTROL_SET_FRAME_PREV:
-            if( input_priv(p_input)->i_state == PAUSE_S )
+            if( input_priv(p_input)->i_state == PLAYING_S )
+            {
+                /* Pause only, exactly like frame-next, and leave the step to
+                 * the next press.
+                 *
+                 * Stepping here as well is tempting but wrong: the pause has
+                 * merely been queued at this point, so the decoder is still
+                 * running. Displaying a buffered frame flushes the vout,
+                 * which frees pool slots and wakes that decoder, and whichever
+                 * picture reaches the queue first is the one shown. When the
+                 * decoder wins, the display jumps forward to the live edge
+                 * instead of stepping back. */
+                ControlPause( p_input, i_control_date );
+            }
+            else if( input_priv(p_input)->i_state == PAUSE_S )
             {
                 vlc_tick_t i_history_date;
                 if( !es_out_VideoHistoryStepBack( input_priv(p_input)->p_es_out,
