@@ -67,6 +67,7 @@ enum reload
 };
 
 static void DecoderHistoryUploadDelete( filter_t * );
+static void DecoderHistoryReset( decoder_t * );
 
 struct decoder_owner_sys_t
 {
@@ -171,6 +172,12 @@ struct decoder_owner_sys_t
         int          i_capacity;  /* 0 until sized from the first frame */
         int          i_count;     /* valid entries currently held, <= i_capacity */
         int          i_head;      /* index of the most-recently-pushed entry */
+
+        /* Shortest gap seen between consecutive buffered frames, which is the
+         * frame interval even for variable frame rate content. 0 until two
+         * frames have been buffered. Used to tell a real neighbouring frame
+         * from one on the far side of a hole - see DecoderHistoryStep(). */
+        vlc_tick_t   i_interval;
 
         /* Lazily-created converter used to download hardware-decoded
          * (opaque, i_planes == 0) pictures to a plain CPU picture before
@@ -1259,6 +1266,18 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
     if( b_downloaded )
         picture_Release( p_src );
 
+    /* Track the frame interval as the shortest gap between consecutive
+     * buffered frames, which holds up under variable frame rate. */
+    if( p_owner->history.i_count > 0 )
+    {
+        vlc_tick_t i_gap = p_picture->date
+                         - p_owner->history.p_dates[p_owner->history.i_head];
+        if( i_gap > 0
+         && ( p_owner->history.i_interval == 0
+           || i_gap < p_owner->history.i_interval ) )
+            p_owner->history.i_interval = i_gap;
+    }
+
     int i_next = ( p_owner->history.i_head + 1 ) % p_owner->history.i_capacity;
 
     if( p_owner->history.pp_pictures[i_next] != NULL )
@@ -1300,6 +1319,12 @@ static int DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
 
         if( p_vout )
             vout_Flush( p_vout, VLC_TICK_INVALID+1 );
+
+        /* Every frame of the preroll was dropped above without reaching the
+         * history, so whatever is buffered sits on the far side of a hole as
+         * long as the preroll, up to several seconds. Those frames are no
+         * longer neighbours of what comes next and must not be stepped into. */
+        DecoderHistoryReset( p_dec );
     }
 
     if( p_picture->date <= VLC_TICK_INVALID )
@@ -2899,6 +2924,27 @@ static int DecoderHistoryStep( decoder_t *p_dec, bool b_backwards,
             i_best = i_prev;
     }
 
+    /* The nearest buffered frame on that side is only the neighbouring frame
+     * if there is no hole in between. Frames dropped during a seek preroll
+     * leave one behind, and a decode error leaves a smaller one: stepping into
+     * the far side then jumps by however long the hole is, which showed up as
+     * a several second leap into an unrelated frame, and the frame stranded
+     * across a preroll is the one decoded before its references, which under
+     * hardware decoding is often blank. Doing nothing is the better answer. */
+    if( i_best != -1 && p_owner->history.i_interval > 0 )
+    {
+        vlc_tick_t i_jump = p_owner->history.p_dates[i_best] - i_ref;
+        if( i_jump < 0 )
+            i_jump = -i_jump;
+
+        if( i_jump > p_owner->history.i_interval * 10 )
+        {
+            msg_Dbg( p_dec, "frame history: refusing to step across a %" PRId64
+                     " us hole", i_jump );
+            i_best = -1;
+        }
+    }
+
     if( i_best == -1 )
     {
         vlc_mutex_unlock( &p_owner->history.lock );
@@ -2973,7 +3019,7 @@ bool input_DecoderHistoryIsActive( decoder_t *p_dec )
     return b_active;
 }
 
-void input_DecoderHistoryReset( decoder_t *p_dec )
+static void DecoderHistoryReset( decoder_t *p_dec )
 {
     decoder_owner_sys_t *p_owner = p_dec->p_owner;
 
@@ -2990,7 +3036,13 @@ void input_DecoderHistoryReset( decoder_t *p_dec )
     p_owner->history.i_capacity = 0;
     p_owner->history.i_count = 0;
     p_owner->history.i_head = -1;
+    p_owner->history.i_interval = 0;
     vlc_mutex_unlock( &p_owner->history.lock );
+}
+
+void input_DecoderHistoryReset( decoder_t *p_dec )
+{
+    DecoderHistoryReset( p_dec );
 }
 
 bool input_DecoderHasFormatChanged( decoder_t *p_dec, es_format_t *p_fmt, vlc_meta_t **pp_meta )
