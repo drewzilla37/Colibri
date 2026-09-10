@@ -2795,21 +2795,31 @@ static int DecoderHistoryDisplay( decoder_t *p_dec, picture_t *p_buffered,
 
     int i_ret = VLC_EGENERIC;
 
-    /* Take the display over before queuing anything: drop whatever the vout
-     * still holds ahead of the viewer. Those queued frames are exactly the
-     * ones stepping away from, and since vout_PutPicture() appends to a FIFO,
-     * leaving them in place would make the forced step below show the oldest
-     * queued frame rather than ours - the display would creep forwards one
-     * frame per keypress instead of following us. Flushing also frees the
-     * pool slot we are about to need, which while paused nothing else would
-     * ever return. */
-    vout_Flush( p_vout, VLC_TICK_INVALID + 1 );
+    /* The flush below drops what the viewer is currently looking at, and a
+     * vout with nothing queued behind it draws a blank frame, which in YUV is
+     * solid green rather than black. So everything that can fail has to happen
+     * before it: giving up after the flush replaces a good frame on screen
+     * with a green one, which is worse than the step doing nothing at all.
+     *
+     * Taking a picture from the pool first also tells us the chroma the pool
+     * hands out, which decides whether the frame needs converting. */
+    bool b_flushed = false;
 
     picture_t *p_out = vout_TryGetPicture( p_vout );
     if( p_out == NULL )
     {
-        msg_Dbg( p_dec, "frame history: no free picture to display into" );
-        goto end;
+        /* Nothing free. While paused nothing is ever returned to the pool on
+         * its own, so releasing what the vout holds is the only way to get a
+         * slot, and this is the one case that has to flush up front. */
+        vout_Flush( p_vout, VLC_TICK_INVALID + 1 );
+        b_flushed = true;
+
+        p_out = vout_TryGetPicture( p_vout );
+        if( p_out == NULL )
+        {
+            msg_Dbg( p_dec, "frame history: no free picture to display into" );
+            goto end;
+        }
     }
 
     /* The pool hands out pictures in the vout's own input format. With
@@ -2832,6 +2842,15 @@ static int DecoderHistoryDisplay( decoder_t *p_dec, picture_t *p_buffered,
     }
     else
         picture_Copy( p_out, p_buffered );
+
+    /* Now that the replacement frame is in hand, take the display over: drop
+     * whatever the vout still holds ahead of the viewer. Those queued frames
+     * are exactly the ones being stepped away from, and since
+     * vout_PutPicture() appends to a FIFO, leaving them in place would show
+     * the oldest queued frame rather than ours, creeping forwards one frame
+     * per keypress instead of following us. */
+    if( !b_flushed )
+        vout_Flush( p_vout, VLC_TICK_INVALID + 1 );
 
     p_out->date = i_date;
     p_out->b_force = true;
