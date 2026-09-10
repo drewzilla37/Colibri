@@ -1173,6 +1173,25 @@ static void DecoderHistoryPush( decoder_t *p_dec, picture_t *p_picture,
     if( i_budget_mb <= 0 )
         return; /* feature disabled */
 
+    /* input_DecoderFlush() deliberately does not wait for this thread, so on a
+     * seek the input thread empties the fifo, marks a flush pending and clears
+     * the history while this thread may still be finishing a picture decoded
+     * before the seek. Pushing that picture now would drop a single frame from
+     * the old position into the freshly cleared ring, stranded far from
+     * everything that follows it, which is exactly the frame stepping then
+     * jumps to. Dragging the seek slider issues those flushes continuously,
+     * which is why it provokes this and a single click rarely does.
+     *
+     * The flag is only ever cleared by this thread, at the top of its loop
+     * once the flush has been processed, so seeing it set here means this
+     * picture predates the flush. */
+    vlc_fifo_Lock( p_owner->p_fifo );
+    bool b_flushing = p_owner->flushing;
+    vlc_fifo_Unlock( p_owner->p_fifo );
+
+    if( b_flushing )
+        return;
+
     /* A picture forced through undated (b_force, e.g. the first one after a
      * wait) would sort wrongly against every other entry and break the
      * date-based lookups below, so it is simply not worth buffering. */
