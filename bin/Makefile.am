@@ -5,8 +5,8 @@ if HAVE_OSX
 bin_PROGRAMS = vlc-osx
 noinst_PROGRAMS = vlc-osx-static
 else
-bin_PROGRAMS = vlc
-noinst_PROGRAMS = vlc-static
+bin_PROGRAMS = colibri
+noinst_PROGRAMS = colibri-static
 endif
 endif
 EXTRA_DIST = vlc_win32_rc.rc.in
@@ -23,25 +23,25 @@ endif
 #
 # Main VLC executable
 #
-vlc_LDADD = ../lib/libvlc.la $(LIBPTHREAD)
-vlc_CPPFLAGS = $(AM_CPPFLAGS)
+colibri_LDADD = ../lib/libvlc.la $(LIBPTHREAD)
+colibri_CPPFLAGS = $(AM_CPPFLAGS)
 if !HAVE_WIN32
-vlc_SOURCES = vlc.c override.c
-vlc_LDADD += $(LIBDL)
+colibri_SOURCES = vlc.c override.c
+colibri_LDADD += $(LIBDL)
 else
-vlc_SOURCES = winvlc.c
-vlc_DEPENDENCIES = vlc_win32_rc.$(OBJEXT)
-vlc_LDFLAGS = -mwindows -Wc,-static
-vlc_LDADD += vlc_win32_rc.$(OBJEXT)
+colibri_SOURCES = winvlc.c
+colibri_DEPENDENCIES = vlc_win32_rc.$(OBJEXT)
+colibri_LDFLAGS = -mwindows -Wc,-static
+colibri_LDADD += vlc_win32_rc.$(OBJEXT)
 libbreakpad_wrapper_la_SOURCES = breakpad.cpp
 libbreakpad_wrapper_la_LIBADD = $(BREAKPAD_LIBS)
 libbreakpad_wrapper_la_LDFLAGS = -static
 libbreakpad_wrapper_la_CXXFLAGS = $(AM_CXXFLAGS) $(BREAKPAD_CFLAGS) -DBREAKPAD_URL=\"@BREAKPAD_URL@\"
 if HAVE_BREAKPAD
 noinst_LTLIBRARIES = libbreakpad_wrapper.la
-vlc_LDADD += libbreakpad_wrapper.la -lstdc++ -lwininet
-vlc_DEPENDENCIES += libbreakpad_wrapper.la
-vlc_CPPFLAGS += -DHAVE_BREAKPAD
+colibri_LDADD += libbreakpad_wrapper.la -lstdc++ -lwininet
+colibri_DEPENDENCIES += libbreakpad_wrapper.la
+colibri_CPPFLAGS += -DHAVE_BREAKPAD
 endif
 endif
 
@@ -77,15 +77,15 @@ endif
 #
 # Static (debug) VLC executable
 #
-vlc_static_SOURCES = $(vlc_SOURCES)
-vlc_static_CFLAGS = $(AM_CFLAGS) \
+colibri_static_SOURCES = $(colibri_SOURCES)
+colibri_static_CFLAGS = $(AM_CFLAGS) \
 	-DTOP_BUILDDIR=\"$$(cd "$(top_builddir)"; pwd)\" \
 	-DTOP_SRCDIR=\"$$(cd "$(top_srcdir)"; pwd)\" \
 	$(NULL)
-vlc_static_CPPFLAGS = $(vlc_CPPFLAGS)
-vlc_static_DEPENDENCIES = $(vlc_DEPENDENCIES)
-vlc_static_LDADD = $(vlc_LDADD)
-vlc_static_LDFLAGS = $(vlc_LDFLAGS) -no-install -static
+colibri_static_CPPFLAGS = $(colibri_CPPFLAGS)
+colibri_static_DEPENDENCIES = $(colibri_DEPENDENCIES)
+colibri_static_LDADD = $(colibri_LDADD)
+colibri_static_LDFLAGS = $(colibri_LDFLAGS) -no-install -static
 
 #
 # Root wrapper
