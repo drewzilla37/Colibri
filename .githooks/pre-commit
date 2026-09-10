@@ -1,0 +1,43 @@
+#!/bin/sh
+# Rejects em dashes (U+2014) in anything being committed.
+#
+# Only staged files are checked, so the handful of upstream VLC files that
+# legitimately contain one are never touched: nine po/ translation catalogues,
+# the THANKS credit to Sparkle's author, and the macOS window title format.
+#
+# src/text/strings.c is allowlisted because its em dash is functional - it is
+# the right-hand side of the "mdash;" entry in the HTML entity decode table,
+# so removing it would break entity decoding for subtitles and playlists.
+#
+# Install with:  git config core.hooksPath .githooks
+
+EM=$(printf '\342\200\224')
+ALLOW='^src/text/strings\.c$'
+
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -v "$ALLOW")
+[ -z "$files" ] && exit 0
+
+bad=""
+for f in $files; do
+    [ -f "$f" ] || continue
+    # skip binaries
+    git diff --cached --numstat -- "$f" | grep -q '^-' && continue
+    if LC_ALL=C grep -q "$EM" "$f"; then
+        n=$(LC_ALL=C grep -c "$EM" "$f")
+        bad="$bad  $f ($n)\n"
+    fi
+done
+
+if [ -n "$bad" ]; then
+    printf 'commit rejected: em dash found in\n'
+    printf "$bad"
+    printf 'Replace with a spaced hyphen, a colon, or reword.\n'
+    printf 'Offending lines:\n'
+    for f in $files; do
+        [ -f "$f" ] || continue
+        LC_ALL=C grep -n "$EM" "$f" 2>/dev/null | sed "s|^|  $f:|" | cut -c1-160
+    done
+    exit 1
+fi
+
+exit 0
