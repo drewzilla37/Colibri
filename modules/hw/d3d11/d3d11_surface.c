@@ -676,11 +676,19 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     D3D11_TEXTURE2D_DESC texDesc;
     ID3D11Texture2D_GetDesc( sys->staging_pic->p_sys->texture[KNOWN_DXGI_INDEX], &texDesc);
 
+    /* The immediate context is shared with the display, which renders on its
+     * own thread and takes this mutex around every use. Mapping the staging
+     * texture, writing it and copying it to the destination has to be
+     * serialised against that, or the copy can interleave with a frame being
+     * drawn and the destination is read before it has been written. */
+    d3d11_device_lock(&sys->d3d_dev);
+
     D3D11_MAPPED_SUBRESOURCE lock;
     HRESULT hr = ID3D11DeviceContext_Map(p_sys->context, sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX],
                                          0, D3D11_MAP_WRITE, 0, &lock);
     if (FAILED(hr)) {
         msg_Err(p_filter, "Failed to map source surface. (hr=0x%lX)", hr);
+        d3d11_device_unlock(&sys->d3d_dev);
         sys->b_conversion_failed = true;
         return;
     }
@@ -699,6 +707,7 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
     {
         msg_Err(p_filter, "chroma conversion into the staging texture failed");
         ID3D11DeviceContext_Unmap(p_sys->context, sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX], 0);
+        d3d11_device_unlock(&sys->d3d_dev);
         sys->b_conversion_failed = true;
         return;
     }
@@ -714,6 +723,9 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
                                               0, 0, 0,
                                               sys->staging_pic->p_sys->resource[KNOWN_DXGI_INDEX], 0,
                                               &copyBox);
+
+    d3d11_device_unlock(&sys->d3d_dev);
+
     if (dst->context == NULL)
     {
         struct va_pic_context *pic_ctx = calloc(1, sizeof(*pic_ctx));
@@ -896,6 +908,23 @@ int D3D11OpenCPUConverter( vlc_object_t *obj )
 
     p_sys->filter = p_cpu_filter;
     p_sys->staging_pic = p_dst;
+
+    /* Keep the device around with its context mutex, so the per frame work in
+     * NV12_D3D11() can serialise against everyone else using the immediate
+     * context. D3D11_FilterHoldInstance() does not fill the mutex in, every
+     * caller looks it up itself. */
+    p_sys->d3d_dev = d3d_dev;
+    p_sys->d3d_dev.context_mutex = INVALID_HANDLE_VALUE;
+    {
+        HANDLE context_lock = INVALID_HANDLE_VALUE;
+        UINT dataSize = sizeof(context_lock);
+        if (SUCCEEDED(ID3D11DeviceContext_GetPrivateData(d3d_dev.d3dcontext,
+                          &GUID_CONTEXT_MUTEX, &dataSize, &context_lock)))
+            p_sys->d3d_dev.context_mutex = context_lock;
+        else
+            msg_Warn(p_filter, "No mutex found to lock the device");
+    }
+
     p_filter->p_sys = p_sys;
     err = VLC_SUCCESS;
 
