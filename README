@@ -1,57 +1,56 @@
-README for the VLC media player
-===============================
+Colibri
+=======
 
-VLC is a popular libre and open source media player and multimedia engine,
-used by a large number of individuals, professionals, companies and
-institutions. Using open source technologies and libraries, VLC has been
-ported to most computing platforms, including GNU/Linux, Windows, Mac OS X,
-BSD, iOS and Android.
-VLC can play most multimedia files, discs, streams, allows playback from
-devices, and is able to convert to or stream in various formats.
-The VideoLAN project was started at the university École Centrale Paris who
-relicensed VLC under the GPLv2 license in February 2001. Since then, VLC has
-been downloaded close to one billion times.
+A media player that can step backwards one frame at a time.
 
-Links:
-======
+Every player can step forwards. Almost none can step back, because going
+backwards means decoding the whole group of pictures again to reach the frame
+just before the one on screen. Colibri keeps recently decoded frames in memory
+instead, so stepping back is the same instant operation as stepping forward.
 
-The VLC web site  . . . . . http://www.videolan.org/
-Support . . . . . . . . . . http://www.videolan.org/support/
-Forums  . . . . . . . . . . http://forum.videolan.org/
-Wiki  . . . . . . . . . . . http://wiki.videolan.org/
-The Developers site . . . . http://wiki.videolan.org/Developers_Corner
-VLC hacking guide . . . . . http://wiki.videolan.org/Hacker_Guide
-Bugtracker  . . . . . . . . http://trac.videolan.org/vlc/
-The VideoLAN web site . . . http://www.videolan.org/
+It is for looking closely at video: finding the frame where something happens,
+pulling a clean still out of a moving shot, checking a cut.
 
-Source Code Content:
-===================
-ABOUT-NLS          - Notes on the Free Translation Project.
-AUTHORS            - VLC authors.
-COPYING            - The GPL license.
-COPYING.LIB        - The LGPL license.
-INSTALL            - Installation and building instructions.
-NEWS               - Important modifications between the releases.
-README             - This file.
-THANKS             - VLC contributors.
 
-bin/               - VLC binaries.
-bindings/          - libVLC bindings to other languages.
-compat/            - compatibility library for operating systems missing
-                     essential functionalities.
-contrib/           - Facilities for retrieving external libraries and building
-                     them for systems that don't have the right versions.
-doc/               - Miscellaneous documentation.
-extras/analyser    - Code analyser and editor specific files.
-extras/buildsystem - different buildsystems specific files.
-extras/misc        - Files that don't fit in the other extras/ categories.
-extras/package     - VLC packaging specific files such as spec files.
-extras/tools/      - Facilities for retrieving external building tools needed
-                     for systems that don't have the right versions.
-include/           - Header files.
-lib/               - libVLC source code.
-modules/           - VLC plugins and modules. Most of the code is here.
-po/                - VLC translations.
-share/             - Common Resources files.
-src/               - libvlccore source code.
-test/              - testing system.
+Using it
+--------
+
+    E           step forward one frame
+    Shift+E     step backward one frame
+
+Both work while paused. Pressing either during playback pauses first, and the
+next press steps.
+
+How much history is kept is set by "Reverse frame history size" in
+Preferences, under Input / Codecs. The default is 1024 MB, which is about 85
+frames at 4K or several hundred at 1080p. Frames enter the buffer as they are
+decoded, so a moment of playback is needed before there is anything to step
+back through.
+
+
+What works
+----------
+
+Windows, on NVIDIA hardware decoding and on software decoding. Other GPU
+vendors are untested rather than known broken: the author has no AMD or Intel
+hardware to try. macOS and Linux are not built.
+
+
+Building
+--------
+
+Colibri builds the same way VLC does; see README.VLC. It is a VLC fork, so the
+full VLC build documentation applies.
+
+
+Licence and relationship to VLC
+-------------------------------
+
+Colibri is built on VLC, by the VideoLAN project and its contributors, and is
+released under the same GNU General Public License version 2 or later. See
+COPYING.
+
+It is not affiliated with or endorsed by VideoLAN. VLC and VideoLAN are their
+trademarks. Nearly all the code here is theirs; the frame history and the
+rebranding are the part that is not, and the commit history shows exactly
+which is which.
