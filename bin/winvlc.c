@@ -167,15 +167,20 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     /***
-     * The LoadLibrary* calls from the modules and the 3rd party code
-     * will search in SYSTEM32 only.
-     * Disabled for this local, non-redistributed dev build: a few plugins
-     * (qt, archive, gme, x265) dynamically link against non-system DLLs
-     * (system Qt5, mingw64 runtime) that only PATH-based search can find.
-     * Official contrib-based builds link everything statically and never
-     * need this.
+     * Restrict LoadLibrary* from the modules and third party code to the
+     * system directory and the directory this program was started from.
+     * Neither the working directory nor PATH is searched, which is what
+     * closes the DLL hijacking hole: dropping a malicious DLL next to a
+     * media file, or anywhere on PATH, no longer gets it loaded.
+     *
+     * VLC restricts this to SYSTEM32 alone because its official builds link
+     * every contrib statically and need nothing else. This build ships its
+     * dependencies beside the executable instead, so the program directory
+     * has to be searched as well. That directory is not a weakness: anyone
+     * who can write to it can replace the executable itself.
      * */
-    /* SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32); */
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32
+                           | LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
     /***
      * Load DLLs from system32 before any other folder (when possible)
      */
