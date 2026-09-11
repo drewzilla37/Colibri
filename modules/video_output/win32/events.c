@@ -794,7 +794,7 @@ static int Win32VoutCreateWindow( event_thread_t *p_event )
     p_event->hwnd =
         CreateWindowEx( WS_EX_NOPARENTNOTIFY,
                     p_event->class_main,             /* name of window class */
-                    _T(VOUT_TITLE) _T(" (VLC Video Output)"),/* window title */
+                    _T(VOUT_TITLE) _T(" (Colibri Video Output)"),/* window title */
                     i_style,                                 /* window style */
                     (!p_event->x) ? (UINT)CW_USEDEFAULT :
                         (UINT)p_event->x,            /* default X coordinate */
@@ -826,7 +826,7 @@ static int Win32VoutCreateWindow( event_thread_t *p_event )
         /* Create our fullscreen window */
         p_event->hfswnd =
             CreateWindowEx( WS_EX_APPWINDOW, p_event->class_main,
-                            _T(VOUT_TITLE) _T(" (VLC Fullscreen Video Output)"),
+                            _T(VOUT_TITLE) _T(" (Colibri Fullscreen Video Output)"),
                             WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN|WS_SIZEBOX,
                             CW_USEDEFAULT, CW_USEDEFAULT,
                             CW_USEDEFAULT, CW_USEDEFAULT,

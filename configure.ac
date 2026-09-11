@@ -30,7 +30,9 @@ PKGDIR="vlc"
 AC_SUBST(PKGDIR)
 
 CONFIGURE_LINE="`echo "$0 $ac_configure_args" | sed -e 's/\\\/\\\\\\\/g'`"
-CODENAME="Vetinari"
+# VLC names each release after a Discworld character. That is their branding,
+# not ours, so it is not carried over and the version reads on its own.
+CODENAME=""
 COPYRIGHT_YEARS="1996-2026"
 
 AC_CONFIG_SRCDIR(src/libvlc.c)
@@ -4587,7 +4589,11 @@ AS_VAR_IF(with_libfuzzer, no, [], [
 dnl
 dnl  Stuff used by the program
 dnl
-VERSION_MESSAGE="${VERSION} ${CODENAME}"
+if test -n "${CODENAME}"; then
+    VERSION_MESSAGE="${VERSION} ${CODENAME}"
+else
+    VERSION_MESSAGE="${VERSION}"
+fi
 COPYRIGHT_MESSAGE="Copyright © ${COPYRIGHT_YEARS} the VideoLAN team"
 AC_DEFINE_UNQUOTED(VERSION_MESSAGE, "${VERSION_MESSAGE}", [Simple version string])
 AC_DEFINE_UNQUOTED(COPYRIGHT_MESSAGE, "${COPYRIGHT_MESSAGE}", [Copyright string])

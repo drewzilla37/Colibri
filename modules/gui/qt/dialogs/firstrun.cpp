@@ -97,7 +97,7 @@ void FirstRun::buildPrivDialog()
     optionsLayout->addWidget( checkbox, line++, 0 );
 
 #ifdef UPDATE_CHECK
-    checkbox2 = new QCheckBox( qtr( "Regularly check for VLC updates" ) );
+    checkbox2 = new QCheckBox( qtr( "Regularly check for Colibri updates" ) );
     checkbox2->setChecked( true );
     optionsLayout->addWidget( checkbox2, line++, 0 );
 #endif

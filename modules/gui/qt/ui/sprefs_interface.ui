@@ -88,7 +88,7 @@
       <item row="0" column="2">
        <widget class="QRadioButton" name="qt">
         <property name="toolTip">
-         <string>This is VLC's default interface, with a native look and feel.</string>
+         <string>This is Colibri's default interface, with a native look and feel.</string>
         </property>
         <property name="text">
          <string>Use native style</string>

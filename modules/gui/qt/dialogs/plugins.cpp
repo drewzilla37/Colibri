@@ -817,7 +817,7 @@ QVariant AddonsListModel::Addon::data( int role ) const
     {
         if ( !( p_entry->e_flags & ADDON_MANAGEABLE ) )
         {
-            returnval = qtr("This addon has been installed manually. VLC can't manage it by itself.");
+            returnval = qtr("This addon has been installed manually. Colibri can't manage it by itself.");
         }
         break;
     }

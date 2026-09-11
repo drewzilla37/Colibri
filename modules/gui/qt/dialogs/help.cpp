@@ -302,7 +302,7 @@ void UpdateDialog::updateNotify( bool b_result )
             assert( p_release );
             b_checked = true;
             QString message = QString(
-                    qtr( "A new version of VLC (%1.%2.%3%4) is available." ) )
+                    qtr( "A new version of Colibri (%1.%2.%3%4) is available." ) )
                 .arg( QString::number( p_release->i_major ) )
                 .arg( QString::number( p_release->i_minor ) )
                 .arg( QString::number( p_release->i_revision ) )
